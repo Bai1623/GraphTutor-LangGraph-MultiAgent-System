@@ -58,6 +58,7 @@ def get_node_llm(node_name: str, **overrides) -> ChatOpenAI:
         api_key=os.getenv(api_key_env),
         base_url=base_url,
         temperature=temperature,
+        streaming=True,
     )
     defaults.update(overrides)
     return ChatOpenAI(**defaults)
@@ -70,6 +71,7 @@ def get_primary_llm(**overrides) -> ChatOpenAI:
         api_key=os.getenv("DEEPSEEK_API_KEY"),
         base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
         temperature=0.7,
+        streaming=True,
     )
     defaults.update(overrides)
     return ChatOpenAI(**defaults)
@@ -88,6 +90,7 @@ def get_fallback_llm(**overrides) -> ChatOpenAI:
         api_key=os.getenv("FALLBACK_API_KEY") or os.getenv("DEEPSEEK_API_KEY") or "not-configured",
         base_url=os.getenv("FALLBACK_BASE_URL", os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")),
         temperature=0.7,
+        streaming=True,
     )
     defaults.update(overrides)
     return ChatOpenAI(**defaults)

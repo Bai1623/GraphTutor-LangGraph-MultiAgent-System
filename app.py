@@ -208,17 +208,21 @@ async def _stream_graph_events(
         return
 
     # ── Check for interrupt after stream completes ─────────────────
-    state_snapshot = await graph.aget_state(config)
-    if state_snapshot.next:
-        for task in state_snapshot.tasks:
-            if hasattr(task, "interrupts") and task.interrupts:
-                draft = task.interrupts[0].value
-                payload = json.dumps(
-                    {"type": "interrupt", "draft": draft, "thread_id": thread_id},
-                    ensure_ascii=False,
-                )
-                yield f"data: {payload}\n\n"
-                return
+    try:
+        state_snapshot = await graph.aget_state(config)
+        if state_snapshot.next:
+            for task in state_snapshot.tasks:
+                if hasattr(task, "interrupts") and task.interrupts:
+                    draft = task.interrupts[0].value
+                    payload = json.dumps(
+                        {"type": "interrupt", "draft": draft, "thread_id": thread_id},
+                        ensure_ascii=False,
+                    )
+                    yield f"data: {payload}\n\n"
+                    return
+    except ValueError:
+        # No checkpointer set (stateless mode) — skip HIL interrupt check
+        pass
 
     yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
 
