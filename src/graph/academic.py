@@ -1,9 +1,29 @@
-"""SubGraph A — Academic Tutor: parallel retrieval (fan-out/fan-in),
-answer generation, and hallucination evaluation with retry loop.
+"""子图 A：学科问答（Academic Tutor）
 
-Keypoint extraction is handled by the supervisor node (merged for latency),
-so this subgraph starts at the academic_router which fans out to both
-rag_retrieve and web_search in parallel.
+这是四条分支中最复杂的一条，包含：
+1. 并行检索（Fan-out/Fan-in）：RAG + Web 同时查询，结果自动合并
+2. 答案生成：基于合并上下文 + LLM 生成最终回答
+3. 幻觉评估：判断回答是否基于实际检索内容
+4. 条件重试循环：检测到幻觉 → 改写查询 → 重新检索 → 重新生成
+
+完整数据流：
+  academic_router → [rag_retrieve ∥ web_search]
+         ↑                ↓              ↓
+         │            generate_answer (Fan-in 汇聚)
+         │                ↓
+         │         evaluate_hallucination
+         │              ↓           ↓
+         └── rewrite_query ←── 检测到幻觉
+                             ↓
+                       未检测到 → END
+
+面试追问点：
+- 为什么 Fan-out/Fan-in 不需要显式 sync？
+  LangGraph 自动管理：add_edge(A, C) + add_edge(B, C) = 等待 A 和 B 都完成
+- 幻觉检测为什么不直接用 LangChain 的 HallucinationChecker？
+  自建评估更灵活，可以用中文提示词适配高考场景，且支持容灾降级
+- 重试上限为什么是 2 次？
+  每次重试增加 ~5s 延迟和 ~3K Token。2 次在延迟和可靠性之间平衡
 """
 
 from __future__ import annotations
@@ -24,45 +44,91 @@ from src.tracing import traced_llm_call, traced_node, traced_retrieval, traced_s
 
 logger = logging.getLogger(__name__)
 
+# 最大重试次数——从 YAML 配置读取，默认 2
 MAX_RETRIES = get_setting("academic.max_retries", 2)
 
 
-# ── Structured output schema for hallucination evaluation ─────────
-class HallucinationEvaluation(BaseModel):
-    """LLM-evaluated faithfulness judgment."""
+# ============================================================================
+# 结构化输出：幻觉评估
+# ============================================================================
 
+class HallucinationEvaluation(BaseModel):
+    """LLM 驱动的答案忠实度评估结果。
+
+    用于 evaluate_hallucination 节点的结构化输出。
+    is_faithful=False 时触发查询改写 + 重新检索。
+
+    为什么不用简单的相似度判断？
+    语义相似度高 ≠ 没有幻觉。例如：
+    - 检索内容："三角函数 sin²θ + cos²θ = 1"
+    - AI 回答："此外，tan²θ + 1 = sec²θ" ← 正确但不在检索结果中
+    需要 LLM 判断是否"超出检索内容的合理推断"vs"凭空捏造"
+    """
     is_faithful: bool = Field(
-        description="True if the answer is grounded in the retrieved context "
-        "and addresses the student's question without fabrication",
+        description="True 表示回答基于检索上下文，没有编造事实"
     )
     reason: str = Field(
-        description="Brief explanation of the evaluation judgment",
+        description="评估的简要说明（如果判定为幻觉，需详细解释原因）"
     )
 
 
+# ============================================================================
+# 工具函数
+# ============================================================================
+
 def _last_human_query(state: TutorState) -> str:
-    """Extract the last HumanMessage content (robust for retry loops)."""
+    """从对话历史中提取最近一条用户消息。
+
+    对于重试循环特别重要：state["messages"] 中可能包含多轮
+    对话，但我们需要的是最初的问题（或改写后的问题）。
+    倒序遍历找到最近的 HumanMessage。
+    """
     for msg in reversed(state["messages"]):
         if isinstance(msg, HumanMessage):
             return msg.content
     return ""
 
 
-# ── Node 0: academic router (fan-out trigger) ─────────────────────
+# ============================================================================
+# 节点 0: Academic Router（并行检索的触发点）
+# ============================================================================
 
 @traced_node
 async def academic_router(state: TutorState) -> dict:
-    """Router node for parallel fan-out. Clears context on retry path."""
+    """学术路由节点——决定是首次检索还是重试检索。
+
+    这个节点本身不做任何业务逻辑，只做状态管理：
+    - 首次执行：retry_count=0 → 返回空字典，直接进入并行检索
+    - 重试执行：retry_count>0 → 清空旧检索结果（CONTEXT_CLEAR），
+      因为旧上下文导致了幻觉，需要全新检索
+
+    为什么需要清空？
+    state["context"] 使用 context_reducer（追加合并），
+    如果不先清空，新检索结果会追加在"导致幻觉的旧结果"后面。
+    """
     if state.get("retry_count", 0) > 0:
+        # 重试路径：清空旧的检索上下文
         return {"context": CONTEXT_CLEAR}
+    # 首次执行：不做任何修改
     return {}
 
 
-# ── Node 0b: query rewriting (retry path only) ──────────────────
+# ============================================================================
+# 节点 0b: Query Rewrite（查询改写——仅在重试时触发）
+# ============================================================================
 
 @traced_node
 async def rewrite_query(state: TutorState) -> dict:
-    """Rewrite the user's query using hallucination feedback for better retrieval."""
+    """根据幻觉评估的反馈改写用户查询。
+
+    为什么要改写而不是直接重试？
+    原始查询可能本身就是模糊的（如"函数怎么学"），如果直接重试，
+    RAG 可能返回同样的不相关结果。改写的目的是让查询更精确、
+    更具体，从而获取更相关的上下文。
+
+    使用 Superisor 模型（Qwen2.5-7B）做改写，不消耗主力模型配额。
+    失败时回退到原始查询，不阻塞主流程。
+    """
     original_query = _last_human_query(state)
     reason = state.get("hallucination_reason", "")
 
@@ -79,21 +145,37 @@ async def rewrite_query(state: TutorState) -> dict:
         ])
         rewritten = response.content.strip()
     except Exception:
+        # —— 容错：改写失败时使用原始查询 ——
         logger.warning("Query rewrite failed, using original query")
         rewritten = original_query
 
     return {"rewritten_query": rewritten}
 
 
-# ── Node 1: RAG retrieval (parallel branch A) ─────────────────────
+# ============================================================================
+# 节点 1: RAG 检索（并行分支 A——本地知识库）
+# ============================================================================
 
 @traced_node
 async def rag_retrieve(state: TutorState) -> dict:
-    """Query ChromaDB with keypoints extracted by the supervisor node."""
+    """从本地 ChromaDB 知识库检索相关内容。
+
+    查询策略（优先级从高到低）：
+    1. rewritten_query：如果有改写后的查询（重试路径），优先使用
+    2. keypoints：Supervisor 提取的关键知识点（首次查询）
+    3. 原始用户消息：兜底
+
+    使用 asyncio.to_thread 将同步检索逻辑放到线程池执行，
+    避免阻塞事件循环。
+
+    检索结果通过 traced_retrieval 记录到 OpenTelemetry，
+    包含检索数量、命中状态和最高相关度分数。
+    """
     rewritten = state.get("rewritten_query", "")
     keypoints = state.get("keypoints", [])
     subject = state.get("subject")
 
+    # —— 构建最优查询 ——
     if rewritten:
         query = rewritten
     elif keypoints:
@@ -101,6 +183,7 @@ async def rag_retrieve(state: TutorState) -> dict:
     else:
         query = _last_human_query(state)
 
+    # subject 过滤器：缩小检索范围（如只查语文或数学相关文档）
     subj = subject if subject != "other" else None
 
     with traced_retrieval(query=query, subject=subj) as span:
@@ -111,17 +194,29 @@ async def rag_retrieve(state: TutorState) -> dict:
             span.set_attribute("rag.top_score", result["docs"][0].get("score", 0))
 
     docs = result["docs"]
+    # 标记来源类型，方便后续 generate_answer 区分 RAG 和 Web 结果
     return {"context": [{"type": "rag", **doc} for doc in docs]}
 
 
-# ── Node 2: web search (parallel branch B) ────────────────────────
+# ============================================================================
+# 节点 2: Web 搜索（并行分支 B——联网搜索）
+# ============================================================================
 
-_SEARCH_TIMEOUT = get_setting("academic.search_timeout", 15)
+_SEARCH_TIMEOUT = get_setting("academic.search_timeout", 15)  # 搜索超时（秒）
 
 
 @traced_node
 async def web_search(state: TutorState) -> dict:
-    """Fan-out web search — runs in parallel with rag_retrieve."""
+    """通过 DuckDuckGo 搜索网络内容，与 RAG 检索并行执行。
+
+    为什么需要联网搜索？
+    - 高考政策可能每年变化（如2025年新高考改革）
+    - 实时新闻、录取分数线等信息本地知识库不可能全覆盖
+    - 为学生提供课本之外的拓展视角
+
+    超时保护：asyncio.wait_for 限制搜索时间。
+    超时或异常时返回空列表，不阻塞主流程（RAG 结果仍然可用）。
+    """
     rewritten = state.get("rewritten_query", "")
     query = rewritten if rewritten else _last_human_query(state)
 
@@ -134,45 +229,72 @@ async def web_search(state: TutorState) -> dict:
             span.set_attribute("search.result_count", len(search_results))
             span.set_attribute("search.timed_out", False)
         except asyncio.TimeoutError:
+            # —— 超时：返回空结果，不阻塞主流程 ——
             search_results = []
             span.set_attribute("search.result_count", 0)
             span.set_attribute("search.timed_out", True)
         except Exception:
+            # —— 其他异常：静默处理 ——
             search_results = []
             span.set_attribute("search.result_count", 0)
             span.set_attribute("search.timed_out", False)
 
+    # 同样标记来源类型
     return {"context": [{"type": "web", **r} for r in search_results]}
 
 
-# ── Node 3: generate answer ──────────────────────────────────────
+# ============================================================================
+# 节点 3: Generate Answer（融合生成——Fan-in 汇聚点）
+# ============================================================================
 
 def _format_retrieved(docs: list[dict]) -> str:
+    """格式化 RAG 检索结果为提示词用的文本块。
+
+    为每个文档标注序号和来源，方便 LLM 在回答中引用。
+    """
     if not docs:
         return "无相关参考资料。"
     parts = []
     for i, d in enumerate(docs, 1):
-        parts.append(f"[{i}] 来源：{d.get('source', '未知')}（相关度：{d.get('score', 'N/A')}）\n{d.get('content', '')}")
+        parts.append(
+            f"[{i}] 来源：{d.get('source', '未知')}"
+            f"（相关度：{d.get('score', 'N/A')}）\n{d.get('content', '')}"
+        )
     return "\n\n".join(parts)
 
 
 def _format_search(results: list[dict]) -> str:
+    """格式化 Web 搜索结果为提示词用的文本块。
+
+    与 RAG 格式不同，Web 结果包含 URL（供用户核实）。
+    """
     if not results:
         return "无网络搜索结果。"
     parts = []
     for i, r in enumerate(results, 1):
-        parts.append(f"[{i}] {r.get('title', '无标题')} ({r.get('url', '')})\n{r.get('content', '')}")
+        parts.append(
+            f"[{i}] {r.get('title', '无标题')} ({r.get('url', '')})\n{r.get('content', '')}"
+        )
     return "\n\n".join(parts)
 
 
 @traced_node
 async def generate_answer(state: TutorState) -> dict:
-    """Synthesize final answer from merged context (RAG + web) via LLM."""
-    llm = get_node_llm("academic")
+    """融合 RAG + Web 检索结果，生成最终回答。
 
+    这是学术分支的"Fan-in 汇聚点"——只有当 rag_retrieve 和
+    web_search 两个并行分支都完成后，这个节点才会被触发。
+    LangGraph 自动管理此同步（见 builder.py 的 add_edge 配置）。
+
+    生成策略：
+    1. 从 context 中按 type 字段分离 RAG 和 Web 结果
+    2. 分别格式化后填入提示词模板
+    3. LLM 根据两组上下文综合生成回答
+    """
+    llm = get_node_llm("academic")
     question = _last_human_query(state)
 
-    # Split merged context by source type
+    # —— 按来源类型分离上下文 ——
     context = state.get("context", [])
     rag_docs = [c for c in context if c.get("type") == "rag"]
     web_results = [c for c in context if c.get("type") == "web"]
@@ -202,28 +324,40 @@ async def generate_answer(state: TutorState) -> dict:
     return {"messages": [AIMessage(content=response.content)]}
 
 
-# ── Node 4: hallucination evaluation (reflection loop) ─────────
+# ============================================================================
+# 节点 4: Hallucination Evaluation（幻觉评估——反思环节）
+# ============================================================================
 
 @traced_node
 async def evaluate_hallucination(state: TutorState) -> dict:
-    """Evaluate whether the generated answer hallucinates beyond retrieved context.
+    """评估生成回答是否基于检索上下文（vs 模型幻觉）。
 
-    Uses structured LLM output to judge faithfulness. On detection,
-    increments retry_count to signal the conditional edge for re-retrieval.
-    Defaults to valid on any parsing/model failure (safe fallback).
+    这是学术分支的"质量关卡"——通过的答案才输出给用户，
+    不通过的触发查询改写 + 重新检索 + 重新生成。
+
+    为什么 temperature=0.0 很重要？
+    幻觉检测必须确定性——同一输入不应有时判"通过"有时判"不通过"。
+
+    容错策略：LLM 调用失败时默认 is_faithful=True（乐观策略），
+    避免因为评估节点故障而阻塞用户获取回答。
+
+    State 更新：
+    - hallucination_detected=True → retry_count += 1（触发条件重试）
+    - hallucination_detected=False → 不做额外修改（流程结束）
     """
     eval_temp = get_setting("academic.hallucination_eval_temperature", 0.0)
     llm = get_node_llm("academic", temperature=eval_temp)
     structured_primary = llm.with_structured_output(HallucinationEvaluation)
 
+    # 容灾链
     fallback_llm = get_fallback_llm(temperature=eval_temp)
     structured_fallback = fallback_llm.with_structured_output(HallucinationEvaluation)
 
-    # Extract the generated answer (last message) and original question
+    # 提取回答和原始问题
     answer = state["messages"][-1].content
     question = _last_human_query(state)
 
-    # Build context from all retrieval sources
+    # 拼接所有检索上下文
     docs = state.get("context", [])
     context = "\n".join(d.get("content", "") for d in docs) if docs else ""
 
@@ -250,6 +384,7 @@ async def evaluate_hallucination(state: TutorState) -> dict:
             )
             is_faithful = evaluation.is_faithful
         except Exception:
+            # —— 容错：评估失败时默认通过 ——
             logger.warning("Hallucination evaluation failed, defaulting to valid")
             is_faithful = True
 
@@ -263,11 +398,24 @@ async def evaluate_hallucination(state: TutorState) -> dict:
     return result
 
 
-def should_retry_or_end(state: TutorState) -> str:
-    """Conditional edge: retry via academic_router or route to END.
+# ============================================================================
+# 条件路由：重试 or 结束
+# ============================================================================
 
-    Allows up to MAX_RETRIES re-retrieval attempts when hallucination
-    is detected. After exhausting retries, routes to END regardless.
+def should_retry_or_end(state: TutorState) -> str:
+    """判断幻觉检测后的路由方向。
+
+    决策逻辑：
+    1. 幻觉被检测到 AND 重试次数 ≤ MAX_RETRIES → "retry"（改写查询重试）
+    2. 无幻觉 OR 超过最大重试次数 → "end"（结束流程）
+
+    为什么达到上限后即使有幻觉也结束？
+    无限重试会陷入死循环——有些"幻觉"可能是评估节点误判，
+    应该把最终判断权交给用户。同时控制 Token 消耗。
+
+    Returns:
+        "retry" → 触发 rewrite_query → academic_router → 重新检索+生成
+        "end"   → 流程结束，返回当前回答
     """
     if (
         state.get("hallucination_detected", False)
