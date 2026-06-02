@@ -104,16 +104,20 @@ export function ChatArea({ messages, onSendMessage, isLoading }: ChatAreaProps) 
               <MessageBubble key={message.id} message={message} />
             ))
           )}
-          {isLoading && messages[messages.length - 1]?.role === "user" && (
-            <div className="flex items-start gap-3">
+          {/* 思考中动画 — 等待 SSE 连接建立时显示（空助手气泡创建后会自动显示气泡内动画） */}
+          {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
+            <div className="flex items-start gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#3D5A40]/10 text-[#3D5A40] flex-shrink-0">
                 <Bot className="h-4 w-4" />
               </div>
-              <div className="bg-white border border-[#C8D6C9] rounded-2xl rounded-tl-sm px-4 py-3">
-                <div className="flex items-center gap-1">
-                  <span className="w-2 h-2 bg-[#3D5A40]/60 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <span className="w-2 h-2 bg-[#3D5A40]/60 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <span className="w-2 h-2 bg-[#3D5A40]/60 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+              <div className="bg-white border border-[#C8D6C9] rounded-2xl rounded-tl-sm px-5 py-4">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 bg-[#3D5A40]/60 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="w-2.5 h-2.5 bg-[#3D5A40]/60 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="w-2.5 h-2.5 bg-[#3D5A40]/60 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                  </div>
+                  <span className="text-xs text-muted-foreground">正在思考...</span>
                 </div>
               </div>
             </div>
@@ -265,11 +269,19 @@ function MessageBubble({ message }: { message: Message }) {
         {isUser ? (
           // User messages render as plain text
           <div className="whitespace-pre-wrap">{message.content}</div>
-        ) : (
-          // Assistant messages render as Markdown
+        ) : message.content ? (
+          // Assistant messages render as Markdown (when content exists)
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
             {message.content}
           </ReactMarkdown>
+        ) : (
+          // 等待 AI 回复——气泡内显示思考动画
+          <div className="flex items-center gap-1.5 py-1">
+            <span className="w-2 h-2 bg-[#3D5A40]/50 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+            <span className="w-2 h-2 bg-[#3D5A40]/50 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+            <span className="w-2 h-2 bg-[#3D5A40]/50 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+            <span className="text-xs text-muted-foreground ml-1">正在思考...</span>
+          </div>
         )}
       </div>
     </div>
