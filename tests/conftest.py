@@ -3,7 +3,7 @@
 All unit tests mock external dependencies (LLM APIs, ChromaDB, web search)
 so they run offline without API keys.
 """
-
+#动绑定邮箱测试
 from __future__ import annotations
 
 import sys
