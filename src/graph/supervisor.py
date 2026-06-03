@@ -108,9 +108,13 @@ async def supervisor_node(state: TutorState) -> dict:
                     subject = "chinese"
 
         except Exception:
-            # —— 容错：LLM 调用失败时回退为 academic ——
-            logger.warning("Supervisor structured output failed, defaulting to academic")
-            intent = "academic"
+            # —— 容错：LLM 调用失败时路由到未知意图兜底 ——
+            # 之前版本默认回退到 academic，但实际效果很糟糕：
+            # 用户说"我好焦虑"→ LLM 崩了 → 系统当学术问题处理 →
+            # 跑去 RAG 检索焦虑相关知识点 → 返回一段科普
+            # 不如直接说"系统繁忙，请重试"来得诚实
+            logger.warning("Supervisor structured output failed, routing to unknown")
+            intent = "unknown"
             subject = "other"
             keypoints = []
 
@@ -135,9 +139,9 @@ async def handle_unknown(state: TutorState) -> dict:
     return {
         "messages": [AIMessage(
             content=(
-                "抱歉，这个问题超出了我的辅导范围。我是你的高考辅导助手，"
-                "可以帮你解答学科知识、制定学习计划、或者聊聊学习中的烦恼。"
-                "请问有什么学习上的问题需要帮助吗？"
+                "抱歉，我暂时无法理解你的问题，请重新描述一下。"
+                "我是你的高考辅导助手，可以帮你解答学科知识、"
+                "制定学习计划、或者聊聊学习中的烦恼。"
             ),
         )],
     }

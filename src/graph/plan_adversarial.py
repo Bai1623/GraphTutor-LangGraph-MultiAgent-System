@@ -184,10 +184,12 @@ async def _run_reviewer(
             )
             return verdict
         except Exception:
-            # —— 容错策略：审查员异常时默认通过 ——
-            # 防止审查员崩溃阻塞整个 pipeline
-            logger.warning("Reviewer %s failed, defaulting to approve", node_name, exc_info=True)
-            return ReviewVerdict(verdict="approve", reason="审查异常，默认通过")
+            # —— 容错策略：审查员异常时默认拒绝 ——
+            # 之前版本默认 approve 放行，但这意味着 LLM 崩溃时
+            # 劣质计划会被直接发给用户。更合理的做法是拒绝放行，
+            # 让用户重新尝试，而不是输出不可控的内容。
+            logger.warning("Reviewer %s failed, defaulting to reject", node_name, exc_info=True)
+            return ReviewVerdict(verdict="reject", reason="审查服务异常，已拒绝放行")
 
 
 # ============================================================================
