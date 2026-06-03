@@ -71,6 +71,7 @@ class TutorState(TypedDict):
     │ subject             │supervisor│ 学科识别 (math/chinese/other)  │
     │ keypoints           │supervisor│ 提取的关键知识点               │
     │ context             │rag/web   │ 检索到的上下文片段 (context_reducer)│
+    │ context_insufficient│check_ctx │ RAG 与 Web 检索均为空      │
     │ search_results      │search_policy│ 政策搜索结果               │
     │ plan                │plan_output│ 最终生成的学习计划           │
     │ retry_count         │evaluate  │ 幻觉检测重试计数               │
@@ -107,6 +108,7 @@ class TutorState(TypedDict):
     # ── 学术子图 (RAG + 幻觉检测) ──────────────────────────────────
     # 检索上下文。使用 context_reducer 防止并行分支互相覆盖
     context: Annotated[list[dict], context_reducer]
+    context_insufficient: bool      # RAG 和 Web 检索结果均为空（前置检查标记）
     retry_count: int                # 当前重试次数
     hallucination_detected: bool    # 是否检测到幻觉
     rewritten_query: str            # 改写后的查询（重试时使用）

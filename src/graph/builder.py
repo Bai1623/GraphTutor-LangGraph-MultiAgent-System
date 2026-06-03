@@ -9,13 +9,17 @@
    情绪（单节点）、兜底
 3. 横切关注点：checkpointer（状态持久化）、tracing（全链路追踪）
 
-图拓扑概览（19 节点）：
+图拓扑概览（20 节点）：
 ==============================
 Supervisor (入口)
-├─ academic_router → [rag_retrieve ∥ web_search] → generate_answer
-│                                                      ↓
-│                    ┌── retry ← rewrite_query ← evaluate_hallucination
-│                    └── END
+├─ academic_router → [rag_retrieve ∥ web_search]
+│                          ↓
+│                   check_context_sufficiency
+│                     ├─ insufficient → END (诚实引导，零LLM)
+│                     └─ generate_answer
+│                          ↓
+│     ┌── retry ← rewrite_query ← evaluate_hallucination
+│     └── END
 ├─ search_policy → gather_intel → drafter
 │                                   ↓
 │     ┌── revise ←─ consensus_check ← [reviewer_academic ∥ reviewer_emotional]
@@ -33,10 +37,12 @@ from langgraph.graph import END, StateGraph
 
 from src.graph.academic import (
     academic_router,
+    check_context_sufficiency,
     evaluate_hallucination,
     generate_answer,
     rag_retrieve,
     rewrite_query,
+    route_after_check,
     should_retry_or_end,
     web_search,
 )
@@ -82,10 +88,11 @@ def build_graph() -> StateGraph:
     # 入口节点：意图分类
     graph.add_node("supervisor", supervisor_node)
 
-    # 子图 A：学术问答（并行检索 + 幻觉检测重试）
+    # 子图 A：学术问答（并行检索 + 前置检查 + 幻觉检测重试）
     graph.add_node("academic_router", academic_router)      # 学术路由（提取查询意图）
     graph.add_node("rag_retrieve", rag_retrieve)            # 本地 RAG 检索
     graph.add_node("web_search", web_search)                # DuckDuckGo 联网搜索
+    graph.add_node("check_context_sufficiency", check_context_sufficiency)  # 检索充分性前置检查
     graph.add_node("generate_answer", generate_answer)      # 融合上下文生成回答
     graph.add_node("evaluate_hallucination", evaluate_hallucination)  # 幻觉检测
     graph.add_node("rewrite_query", rewrite_query)          # 查询改写（重试时触发）
@@ -127,7 +134,7 @@ def build_graph() -> StateGraph:
     )
 
     # ═══════════════════════════════════════════════════════════════
-    # 子图 A：学术问答流（含并行检索 + 幻觉检测重试循环）
+    # 子图 A：学术问答流（含并行检索 + 前置检查 + 幻觉检测重试循环）
     # ═══════════════════════════════════════════════════════════════
 
     # 3.3 Fan-out（并行出边）：academic_router 同时触发 RAG 和 Web
@@ -135,12 +142,22 @@ def build_graph() -> StateGraph:
     graph.add_edge("academic_router", "rag_retrieve")
     graph.add_edge("academic_router", "web_search")
 
-    # 3.4 Fan-in（汇聚）：两条检索路径都完成后再进入 generate_answer
+    # 3.4 Fan-in（汇聚）：两条检索路径都完成后再进入前置检查
     #     两条边指向同一节点 = LangGraph 等待两者都完成后才执行
-    graph.add_edge("rag_retrieve", "generate_answer")
-    graph.add_edge("web_search", "generate_answer")
+    graph.add_edge("rag_retrieve", "check_context_sufficiency")
+    graph.add_edge("web_search", "check_context_sufficiency")
 
-    # 3.5 幻觉评估 → 重试循环或结束
+    # 3.5 检索充分性检查 → 生成回答 or 直接结束
+    graph.add_conditional_edges(
+        "check_context_sufficiency",
+        route_after_check,
+        {
+            "continue": "generate_answer",  # 有检索结果：正常生成
+            "end": END,                      # 都为空：已返回诚实引导
+        },
+    )
+
+    # 3.6 幻觉评估 → 重试循环或结束
     graph.add_edge("generate_answer", "evaluate_hallucination")
     graph.add_conditional_edges(
         "evaluate_hallucination",

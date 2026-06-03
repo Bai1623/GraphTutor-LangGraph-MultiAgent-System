@@ -244,6 +244,114 @@ async def web_search(state: TutorState) -> dict:
 
 
 # ============================================================================
+# 节点 2b: Context Sufficiency Check（检索充分性前置检查——2026-06-04 新增）
+# ============================================================================
+
+@traced_node
+async def check_context_sufficiency(state: TutorState) -> dict:
+    """在进入 LLM 生成之前，检查 RAG 和 Web 检索是否均无结果。
+
+    为什么需要这个节点？
+    generate_answer 的 system prompt 要求 LLM"结合参考资料给出详尽解答"，
+    但当两边检索都为空时，LLM 被置于一个矛盾境地：
+    — 遵守 prompt → 需要编造内容（幻觉）
+    — 诚实 → 违反"详尽解答"的指令
+
+    这个前置检查的根本目的不是拦截幻觉，而是**不让 LLM 面对这个矛盾**。
+    当信息客观上不存在时（如"2025 年高考作文题目"在考前被提问）：
+    1. 不调用主力模型（generate_answer 用的 DeepSeek）
+    2. 改用约束型 LLM 调用（Qwen2.5-7B + temperature=0.0 + 专用 prompt）
+       — 生成诚实引导回答（说明原因 + 给出替代方向）
+
+    为什么这里又调用了 LLM？之前不是说零 LLM 吗？
+    硬编码模板无法给出查询特定的「为什么不可得」——用户问"2025 作文题"
+    和问"同桌叫什么名字"，信息不可得的原因完全不同。需要 LLM 理解查询
+    内容才能写出有针对性的诚实回复。
+
+    但这里的 LLM 调用和 generate_answer 有本质区别：
+    — generate_answer: 「结合参考资料给出详尽解答」→ 空 context 时矛盾
+    — honest_response: 「信息不存在，请诚实说明原因」→ 任务本身就是诚实
+    LLM 不需要编造——它的工作是解释「为什么回答不了」，不是「强行回答」。
+
+    安全措施：
+    - temperature=0.0：确定性输出，不"发挥"
+    - 用 Supervisor 模型（Qwen2.5-7B）：便宜、快、与 generate_answer 隔离
+    - LLM 异常时回退到硬编码兜底模板：保证可用性
+
+    与 is_hit 的关系（面试可能追问）：
+    is_hit 判断的是「检索到的文档和 query 相关吗」（相似度阈值），
+    本节点判断的是「检索结果为空吗」（空/非空）。两者是正交维度：
+    — is_hit=False + 空结果 → 本节点拦截
+    — is_hit=False + 有结果（质量差）→ 本节点放行，靠幻觉评估兜底
+    """
+    context = state.get("context", [])
+
+    # 按来源类型分离
+    rag_docs = [c for c in context if c.get("type") == "rag"]
+    web_results = [c for c in context if c.get("type") == "web"]
+
+    # 至少有一方有结果 → 放行到 generate_answer
+    if rag_docs or web_results:
+        return {"context_insufficient": False}
+
+    # 两者均为空 → 用约束型 LLM 生成诚实应答
+    user_query = _last_human_query(state)
+    logger.info(
+        "Context insufficient for query: %s (RAG=0, Web=0), "
+        "calling honest-response LLM",
+        user_query[:80],
+    )
+
+    # —— 使用 Supervisor 模型（便宜 + 快）+ temperature=0.0 ——
+    llm = get_node_llm("supervisor", temperature=0.0)
+    system_prompt = load_prompt("honest_response_system")
+
+    with traced_llm_call(
+        model_name=get_setting("supervisor.model", "Qwen/Qwen2.5-7B-Instruct"),
+        node_name="check_context_sufficiency",
+        temperature=0.0,
+    ):
+        try:
+            response = await llm.ainvoke([
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=f"学生的问题是：{user_query}"),
+            ])
+            honest_reply = response.content.strip()
+        except Exception:
+            # —— 兜底：LLM 异常时用硬编码模板（保可用性）——
+            logger.warning("Honest-response LLM failed, using static fallback")
+            honest_reply = (
+                f"抱歉，关于「{user_query[:80]}」，我目前无法找到可靠的参考信息。\n\n"
+                "可能的原因：\n"
+                "- 相关信息尚未公布或超出了我的知识覆盖范围\n"
+                "- 网络搜索也未找到相关内容\n\n"
+                "**你可以尝试：**\n"
+                "- 换一个相关角度提问，比如备考策略或知识点梳理\n"
+                "- 询问近几年的类似内容，我可以帮你分析规律\n\n"
+                "我很乐意从其他角度继续帮你备考！"
+            )
+
+    return {
+        "context_insufficient": True,
+        "messages": [AIMessage(content=honest_reply)],
+    }
+
+
+def route_after_check(state: TutorState) -> str:
+    """检索充分性检查后的路由决策。
+
+    - context_insufficient=True  → 直接结束（已在 check 中返回回答）
+    - context_insufficient=False → 进入 generate_answer 正常生成
+
+    Returns:
+        "end" 还是 "continue"
+    """
+    if state.get("context_insufficient", False):
+        return "end"
+    return "continue"
+
+
+# ============================================================================
 # 节点 3: Generate Answer（融合生成——Fan-in 汇聚点）
 # ============================================================================
 

@@ -1,6 +1,6 @@
 # 改动记录
 
-| 2026-06-03 | `9226295` | docs: 为llm/planner/emotional/RAG/工具添加中文注释 |
+| 2026-06-03 | `ffce24b` | fix: 容错策略优化——Supervisor崩溃走unknown而非academic，Reviewer异常默认拒绝而非通过 |
 
 | 日期 | 提交 | 说明 |
 |------|------|------|
