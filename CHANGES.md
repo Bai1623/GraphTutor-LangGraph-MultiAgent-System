@@ -1,6 +1,6 @@
 # 改动记录
 
-> 自动生成 — 每次 `git commit` 后由 Claude Code Hook 自动追加
+| 2026-06-03 | `9226295` | docs: 为llm/planner/emotional/RAG/工具添加中文注释 |
 
 | 日期 | 提交 | 说明 |
 |------|------|------|
