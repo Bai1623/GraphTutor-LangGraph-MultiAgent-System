@@ -253,13 +253,47 @@ async def generate_sse(
     if thread_id is None:
         thread_id = str(uuid.uuid4())
     config = make_thread_config(thread_id)
-    state_input = {"messages": [HumanMessage(content=query)]}
+
+    # —— 长期记忆：加载用户历史事实 ——
+    long_term_memory = ""
+    try:
+        from src.memory.long_term import get_memory_store
+        store = get_memory_store()
+        long_term_memory = store.summarize_for_prompt(thread_id)
+        if long_term_memory:
+            logger.info("Loaded long-term memory for user %s: %d chars", thread_id[:8], len(long_term_memory))
+    except Exception:
+        logger.warning("Failed to load long-term memory", exc_info=True)
+
+    state_input = {"messages": [HumanMessage(content=query)], "long_term_memory": long_term_memory}
 
     # Emit thread_id so frontend can use it for /resume
     yield f"data: {json.dumps({'type': 'thread_id', 'thread_id': thread_id}, ensure_ascii=False)}\n\n"
 
+    # 收集对话内容供后续记忆提取
+    assistant_reply = ""
+
     async for chunk in _stream_graph_events(graph, state_input, config, thread_id):
         yield chunk
+        # 从 SSE 事件中收集 assistant 的回复文本
+        if chunk.startswith("data: "):
+            try:
+                data = json.loads(chunk.removeprefix("data: ").strip())
+                if data.get("type") == "token":
+                    assistant_reply += data.get("content", "")
+                elif data.get("type") == "text":
+                    assistant_reply += data.get("content", "")
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+    # —— 长期记忆：对话结束后提取关键信息 ——
+    if assistant_reply:
+        try:
+            from src.memory.extractor import extract_and_store
+            conversation = f"学生: {query}\n\n老师: {assistant_reply[:1000]}"
+            await extract_and_store(thread_id, conversation)
+        except Exception:
+            logger.warning("Failed to extract long-term memory", exc_info=True)
 
 
 async def generate_resume_sse(

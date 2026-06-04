@@ -136,3 +136,9 @@ class TutorState(TypedDict):
     hil_feedback: str    # 用户原始反馈文本
     hil_summary: str     # 多轮反馈的压缩摘要（覆盖式，不追加）
     feedback_route: str  # 反馈路由器分类结果: "tweak" / "rewrite"
+
+    # ── 长期记忆 ────────────────────────────────────────────
+    # 跨会话持久化的用户关键信息（如年级、弱项、偏好等）
+    # supervisor 启动时从 MemoryStore 加载，注入系统提示词
+    # 格式：[关于该用户的记忆]\n- 事实1\n- 事实2\n
+    long_term_memory: str

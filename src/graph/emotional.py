@@ -42,8 +42,14 @@ async def emotional_response(state: TutorState) -> dict:
     """
     llm = get_node_llm("emotional")
 
-    # 传入完整对话历史，让 LLM 理解上下文
-    history = [SystemMessage(content=load_prompt("emotional_system"))]
+    # 加载长期记忆，注入系统提示词
+    memory_text = ""
+    long_term_memory = state.get("long_term_memory", "")
+    if long_term_memory:
+        memory_text = f"\n\n{long_term_memory}"
+
+    # 传入完整对话历史 + 长期记忆，让 LLM 理解上下文
+    history = [SystemMessage(content=load_prompt("emotional_system") + memory_text)]
     for msg in state["messages"]:
         history.append(msg)
 

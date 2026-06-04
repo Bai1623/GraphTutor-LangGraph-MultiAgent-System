@@ -77,6 +77,13 @@ async def supervisor_node(state: TutorState) -> dict:
     last_msg = state["messages"][-1]
     user_text = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
 
+    # —— 加载长期记忆：首次对话时从 MemoryStore 读取 ——
+    long_term_memory = state.get("long_term_memory", "")
+    memory_section = ""
+    if long_term_memory:
+        memory_section = f"\n\n{long_term_memory}"
+        logger.info("Memory loaded: %d chars for this user", len(long_term_memory))
+
     temperature = get_setting("supervisor.temperature", 0.0)
     model_name = get_setting("supervisor.model", os.getenv("DEEPSEEK_MODEL", "deepseek-chat"))
 
@@ -87,7 +94,7 @@ async def supervisor_node(state: TutorState) -> dict:
     ):
         try:
             result = await structured_llm.ainvoke([
-                SystemMessage(content=load_prompt("supervisor_system")),
+                SystemMessage(content=load_prompt("supervisor_system") + memory_section),
                 HumanMessage(content=user_text),
             ])
             intent = result.intent
