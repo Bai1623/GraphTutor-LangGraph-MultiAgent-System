@@ -32,13 +32,14 @@ import asyncio
 import logging
 import os
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel, Field
 
 from src.config import get_setting, load_prompt
 from src.graph.llm import async_invoke_with_fallback, get_fallback_llm, get_node_llm
 from src.graph.state import CONTEXT_CLEAR, TutorState
 from src.rag.retriever import retrieve
+from src.tools.agent_tools import search_knowledge_base, search_web
 from src.tools.search_tool import search as web_search_fn
 from src.tracing import traced_llm_call, traced_node, traced_retrieval, traced_search
 
@@ -386,50 +387,124 @@ def _format_search(results: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
+# ============================================================================
+# Agent 工具配置 —— 为 Function Calling 准备
+# ============================================================================
+
+# 工具列表：LLM 在生成过程中可以自主调用的两把"查询工具"
+_TOOLS = [search_knowledge_base, search_web]
+_TOOL_BY_NAME = {t.name: t for t in _TOOLS}
+_MAX_TOOL_ROUNDS = get_setting("academic.max_tool_rounds", 3)
+
+
+async def _execute_tool(tool_call: dict) -> str:
+    """在线程池中执行同步工具调用，返回格式化结果。
+
+    工具函数（search_knowledge_base / search_web）内部调用了
+    retrieve() 和 search()，这些是同步 I/O 操作，需要放到线程池
+    执行以避免阻塞 FastAPI 事件循环。
+    """
+    tool_name = tool_call.get("name", "")
+    tool_args = tool_call.get("args", {})
+    tool_fn = _TOOL_BY_NAME.get(tool_name)
+    if tool_fn is None:
+        logger.warning("Unknown tool requested: %s", tool_name)
+        return f"错误：未知工具 '{tool_name}'"
+    try:
+        result = await asyncio.to_thread(tool_fn.invoke, tool_args)
+        return str(result)
+    except Exception:
+        logger.exception("Tool '%s' execution failed", tool_name)
+        return f"工具 '{tool_name}' 调用失败，请基于已有信息继续回答。"
+
+
+# ============================================================================
+# 节点 3: Generate Answer（Agent 循环 + Function Calling）
+# ============================================================================
+
 @traced_node
 async def generate_answer(state: TutorState) -> dict:
-    """融合 RAG + Web 检索结果，生成最终回答。
+    """融合 RAG + Web 检索结果，通过 Agent 循环自主决定是否需要补充查询。
 
-    这是学术分支的"Fan-in 汇聚点"——只有当 rag_retrieve 和
-    web_search 两个并行分支都完成后，这个节点才会被触发。
-    LangGraph 自动管理此同步（见 builder.py 的 add_edge 配置）。
+    这是学术分支的 Fan-in 汇聚点 —— rag_retrieve 和 web_search
+    都完成后才触发。
 
-    生成策略：
-    1. 从 context 中按 type 字段分离 RAG 和 Web 结果
-    2. 分别格式化后填入提示词模板
-    3. LLM 根据两组上下文综合生成回答
+    与旧版的区别（Function Calling 升级）：
+    — 旧版：LLM 一次性生成，拿到什么上下文用什么，不够就硬编
+    — 新版：LLM 生成过程中发现信息不足时，主动调用 search_knowledge_base
+      或 search_web 工具补充查询，工具结果实时追加到对话上下文
+
+    安全措施：
+    — max_tool_rounds=3：最多 3 轮工具调用，防止死循环
+    — 容灾 fallback LLM 同样 bind_tools，保障工具调用不因主模型故障中断
+    — 幻觉评估（evaluate_hallucination）仍在此节点之后兜底
     """
     llm = get_node_llm("academic")
+    temperature = get_setting("academic.temperature", 0.7)
     question = _last_human_query(state)
 
-    # —— 按来源类型分离上下文 ——
+    # —— 按来源类型分离上下文（Fan-in 汇聚的结果）——
     context = state.get("context", [])
     rag_docs = [c for c in context if c.get("type") == "rag"]
     web_results = [c for c in context if c.get("type") == "web"]
 
-    temperature = get_setting("academic.temperature", 0.7)
+    # —— 绑定工具到主/副模型 ——
+    primary_with_tools = llm.bind_tools(_TOOLS)
+    fallback_llm = get_fallback_llm(temperature=temperature)
+    fallback_with_tools = fallback_llm.bind_tools(_TOOLS)
+
+    # —— 构建初始消息（初始上下文 + 用户问题）——
     user_prompt = load_prompt("academic_answer").format(
         retrieved_context=_format_retrieved(rag_docs),
         search_context=_format_search(web_results),
         question=question,
     )
-
-    fallback = get_fallback_llm(temperature=temperature)
-    messages = [
+    messages: list = [
         SystemMessage(content=load_prompt("academic_system")),
         HumanMessage(content=user_prompt),
     ]
+
+    # —— Agent 循环：LLM 自主决定调用工具 or 输出最终回答 ——
+    tool_rounds = 0
+    final_content = ""
 
     with traced_llm_call(
         model_name=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
         node_name="generate_answer",
         temperature=temperature,
     ) as span:
-        response = await async_invoke_with_fallback(
-            llm, messages, fallback=fallback, span=span,
-        )
+        for _ in range(_MAX_TOOL_ROUNDS):
+            response = await async_invoke_with_fallback(
+                primary_with_tools, messages,
+                fallback=fallback_with_tools, span=span,
+            )
+            messages.append(response)
 
-    return {"messages": [AIMessage(content=response.content)]}
+            # 没有工具调用 → LLM 认为信息够了，输出最终回答
+            if not response.tool_calls:
+                final_content = response.content or ""
+                break
+
+            # 有工具调用 → 执行工具，结果追加到对话，继续循环
+            tool_rounds += 1
+            span.set_attribute("agent.tool_rounds", tool_rounds)
+
+            for tc in response.tool_calls:
+                tool_result = await _execute_tool(tc)
+                messages.append(ToolMessage(
+                    content=tool_result,
+                    tool_call_id=tc["id"],
+                ))
+
+        else:
+            # 达到最大轮次仍在调工具 → 用最后一轮响应作为最终回答
+            logger.warning(
+                "Agent reached max tool rounds (%d), forcing final answer",
+                _MAX_TOOL_ROUNDS,
+            )
+            final_content = response.content or "抱歉，我暂时无法完整回答这个问题，请换个方式提问。"
+
+    return {"messages": [AIMessage(content=final_content)]}
 
 
 # ============================================================================

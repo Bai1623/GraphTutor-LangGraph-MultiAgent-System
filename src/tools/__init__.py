@@ -11,7 +11,14 @@ rag_retrieve 函数），而非让 LLM 自主选择。这种"预编排"方式
 更适合确定性流程（先检索再回答），比让 LLM 自己决定更可靠。
 """
 
+from src.tools.agent_tools import search_knowledge_base, search_web
 from src.tools.rag_tool import rag_retrieve
 from src.tools.search_tool import get_search_tool, search
 
-__all__ = ["rag_retrieve", "get_search_tool", "search"]
+__all__ = [
+    "rag_retrieve",
+    "get_search_tool",
+    "search",
+    "search_knowledge_base",
+    "search_web",
+]
