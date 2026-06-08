@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -254,6 +255,20 @@ async def generate_sse(
         thread_id = str(uuid.uuid4())
     config = make_thread_config(thread_id)
 
+    # ── 语义缓存：相似问题查缓存 ──
+    cached_answer = None
+    try:
+        from src.cache.semantic import get_semantic_cache
+        from src.rag.indexer import _get_embedding
+        cache = get_semantic_cache()
+        emb_fn = _get_embedding()
+        query_embedding = await asyncio.to_thread(emb_fn.embed_query, query)
+        cached_answer = cache.lookup(query_embedding)
+        if cached_answer:
+            logger.info("Semantic cache HIT for query: %s", query[:40])
+    except Exception:
+        logger.warning("Semantic cache check failed, proceeding normally", exc_info=True)
+
     # —— 长期记忆：加载用户历史事实 ——
     long_term_memory = ""
     try:
@@ -265,12 +280,23 @@ async def generate_sse(
     except Exception:
         logger.warning("Failed to load long-term memory", exc_info=True)
 
-    state_input = {"messages": [HumanMessage(content=query)], "long_term_memory": long_term_memory}
-
     # Emit thread_id so frontend can use it for /resume
     yield f"data: {json.dumps({'type': 'thread_id', 'thread_id': thread_id}, ensure_ascii=False)}\n\n"
 
-    # 收集对话内容供后续记忆提取
+    # ── 缓存命中：直接流式返回缓存答案，跳过 RAG + LLM ──
+    if cached_answer:
+        # 模拟 token 流式事件（将缓存答案按字符分块发送）
+        for i in range(0, len(cached_answer), 3):
+            chunk_text = cached_answer[i:i + 3]
+            payload = json.dumps({"type": "token", "content": chunk_text}, ensure_ascii=False)
+            yield f"data: {payload}\n\n"
+            await asyncio.sleep(0.01)  # 模拟流式延迟
+        yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+        return
+
+    state_input = {"messages": [HumanMessage(content=query)], "long_term_memory": long_term_memory}
+
+    # 收集对话内容供后续记忆提取 + 缓存存储
     assistant_reply = ""
 
     async for chunk in _stream_graph_events(graph, state_input, config, thread_id):
@@ -286,7 +312,7 @@ async def generate_sse(
             except (json.JSONDecodeError, KeyError):
                 pass
 
-    # —— 长期记忆：对话结束后提取关键信息 ——
+    # ── 长期记忆：对话结束后提取关键信息 ──
     if assistant_reply:
         try:
             from src.memory.extractor import extract_and_store
@@ -294,6 +320,12 @@ async def generate_sse(
             await extract_and_store(thread_id, conversation)
         except Exception:
             logger.warning("Failed to extract long-term memory", exc_info=True)
+
+        # ── 语义缓存：存储新问答对 ──
+        try:
+            cache.store(query, assistant_reply, query_embedding)
+        except Exception:
+            logger.warning("Failed to store in semantic cache", exc_info=True)
 
 
 async def generate_resume_sse(
