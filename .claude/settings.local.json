@@ -15,7 +15,7 @@
           {
             "type": "command",
             "if": "Bash(git commit*)",
-            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/update_changelog.py\""
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && HASH=$(git log -1 --format=%h) && DATE=$(git log -1 --format=%as) && MSG=$(git log -1 --format=%s) && NEWLINE=\"| $DATE | \\`$HASH\\` | $MSG |\" && head -2 CHANGES.md > CHANGES.md.new && echo \"$NEWLINE\" >> CHANGES.md.new && tail -n +3 CHANGES.md >> CHANGES.md.new && mv CHANGES.md.new CHANGES.md"
           }
         ]
       }
