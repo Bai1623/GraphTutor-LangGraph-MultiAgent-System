@@ -15,7 +15,7 @@
           {
             "type": "command",
             "if": "Bash(git commit*)",
-            "command": "cd \"$CLAUDE_PROJECT_DIR\" && HASH=$(git log -1 --format=%h) && DATE=$(git log -1 --format=%as) && MSG=$(git log -1 --format=%s) && echo \"| $DATE | \\`$HASH\\` | $MSG |\" >> CHANGES.md.tmp && head -2 CHANGES.md > CHANGES.md.new && cat CHANGES.md.tmp >> CHANGES.md.new && tail -n +4 CHANGES.md >> CHANGES.md.new && mv CHANGES.md.new CHANGES.md && rm -f CHANGES.md.tmp"
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python -c \"import subprocess,datetime; h=subprocess.run(['git','log','-1','--format=%h'],capture_output=True,text=True).stdout.strip(); d=subprocess.run(['git','log','-1','--format=%as'],capture_output=True,text=True).stdout.strip(); m=subprocess.run(['git','log','-1','--format=%s'],capture_output=True,text=True).stdout.strip(); lines=open('CHANGES.md',encoding='utf-8').readlines(); lines.insert(2,f'| {d} | \\`{h}\\` | {m} |\\n'); open('CHANGES.md','w',encoding='utf-8').writelines(lines)\""
           }
         ]
       }
