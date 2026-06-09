@@ -1,5 +1,6 @@
 # 改动记录
 
+| 2026-06-08 | `992ed1e` | chore: 补全CHANGES.md缺失记录+修复Hook Windows兼容 |
 | 2026-06-08 | `39bb0a5` | feat: 新增语义缓存——相似问题直接返回缓存答案，降低Token消耗 |
 | 2026-06-05 | `f45ac9d` | feat: 新增Agent Function Calling工具——LLM自主调用知识库和网络搜索 |
 | 2026-06-04 | `1cbb5fa` | feat: 新增长期记忆系统——JSON文件持久化+自动提取用户关键信息 |

@@ -1,11 +1,12 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Send, Bot, User, Plus, SlidersHorizontal, Mic } from "lucide-react"
+import { Send, Bot, User, Plus, SlidersHorizontal, Mic, Download } from "lucide-react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { exportChatAsPdf } from "@/lib/export-pdf"
 
 export interface Message {
   id: string
@@ -20,6 +21,7 @@ interface ChatAreaProps {
 }
 
 export function ChatArea({ messages, onSendMessage, isLoading }: ChatAreaProps) {
+  const [showExportTip, setShowExportTip] = useState(false)
   const [input, setInput] = useState("")
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -50,6 +52,31 @@ export function ChatArea({ messages, onSendMessage, isLoading }: ChatAreaProps) 
       {/* Messages Area — native scroll container with constrained height */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-8 min-h-0">
         <div className="max-w-3xl mx-auto py-6 flex flex-col gap-6">
+          {/* Export button — only show when there are messages */}
+          {messages.length > 0 && (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  exportChatAsPdf(messages)
+                  setShowExportTip(false)
+                }}
+                onMouseEnter={() => setShowExportTip(true)}
+                onMouseLeave={() => setShowExportTip(false)}
+                className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-[#3D5A40] hover:bg-[#3D5A40]/5 rounded-lg transition-colors relative"
+              >
+                <Download className="h-3.5 w-3.5" />
+                导出对话
+                {showExportTip && (
+                  <span className="absolute -bottom-7 left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground whitespace-nowrap bg-white px-2 py-0.5 rounded border shadow-sm">
+                    通过浏览器打印 → 另存为 PDF
+                  </span>
+                )}
+              </Button>
+            </div>
+          )}
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[60vh] text-center">
               {/* Phoenix Icon for Empty State */}
