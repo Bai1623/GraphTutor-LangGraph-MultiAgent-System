@@ -176,17 +176,55 @@ export function RightPanel({ logs, nodeEvents, tokenUsage, isInterrupted }: Righ
             </div>
           )}
 
-          {/* Token Usage Counter */}
-          {tokenUsage.total > 0 && (
-            <div className="px-4 py-2 pl-12 border-b border-border bg-[#F5F3E8]/50">
-              <p className="text-xs font-mono text-[#3D5A40]">
-                Tokens: {tokenUsage.total}
-                <span className="text-muted-foreground ml-1">
-                  (in: {tokenUsage.input} / out: {tokenUsage.output})
-                </span>
-              </p>
-            </div>
-          )}
+          {/* Token 统计面板 */}
+          <div className="px-4 py-3 pl-12 border-b border-border">
+            <h3 className="text-sm font-semibold text-[#3D5A40] mb-2">Token 消耗</h3>
+            {tokenUsage.total > 0 ? (
+              <div className="space-y-2">
+                {/* Bar chart: input vs output */}
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-2 bg-[#E8E5D8] rounded-full overflow-hidden flex">
+                    <div
+                      className="h-full bg-[#4A90D9] transition-all duration-300"
+                      style={{ width: `${Math.max(5, tokenUsage.total > 0 ? (tokenUsage.input / tokenUsage.total) * 100 : 0)}%` }}
+                    />
+                    <div
+                      className="h-full bg-[#3D5A40] transition-all duration-300"
+                      style={{ width: `${Math.max(5, tokenUsage.total > 0 ? (tokenUsage.output / tokenUsage.total) * 100 : 0)}%` }}
+                    />
+                  </div>
+                </div>
+                {/* Legend */}
+                <div className="flex gap-3 text-[10px]">
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-[#4A90D9]" />
+                    <span className="text-muted-foreground">输入</span>
+                    <span className="font-mono font-medium">{tokenUsage.input.toLocaleString()}</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-[#3D5A40]" />
+                    <span className="text-muted-foreground">输出</span>
+                    <span className="font-mono font-medium">{tokenUsage.output.toLocaleString()}</span>
+                  </span>
+                  <span className="flex items-center gap-1 ml-auto">
+                    <span className="text-muted-foreground">总计</span>
+                    <span className="font-mono font-semibold text-[#3D5A40]">{tokenUsage.total.toLocaleString()}</span>
+                  </span>
+                </div>
+                {/* Cost estimate */}
+                <div className="text-[10px] text-muted-foreground border-t border-[#E8E5D8] pt-1.5 mt-1">
+                  <span>估算成本（DeepSeek V4）:</span>
+                  <span className="font-mono font-medium text-[#3D5A40] ml-1">
+                    ¥{((tokenUsage.input / 1_000_000 * 1.0) + (tokenUsage.output / 1_000_000 * 4.0)).toFixed(4)}
+                  </span>
+                  <span className="ml-1">（输入 ¥1/M | 输出 ¥4/M tokens）</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">等待对话...</p>
+            )}
+          </div>
+        )}
 
           {/* System Logs - 30% height */}
           <div className="flex-[3] flex flex-col overflow-hidden min-h-0">
