@@ -15,7 +15,7 @@
           {
             "type": "command",
             "if": "Bash(git commit*)",
-            "command": "python .claude/hooks/update_changelog.py"
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/update_changelog.py\""
           }
         ]
       }
