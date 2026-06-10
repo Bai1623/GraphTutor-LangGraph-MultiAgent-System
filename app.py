@@ -75,6 +75,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── API 限流中间件（Token Bucket） ──
+if os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false":
+    from src.middleware.rate_limit import create_rate_limit_middleware
+    RateLimitMiddleware = create_rate_limit_middleware()
+    app.add_middleware(RateLimitMiddleware)
+
 
 ALLOWED_NODES = {"generate_answer", "drafter", "plan_tweak", "emotional_response"}
 
