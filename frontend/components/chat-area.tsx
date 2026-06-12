@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Send, Bot, User, Plus, SlidersHorizontal, Mic, Download } from "lucide-react"
+import { Send, Bot, User, Plus, SlidersHorizontal, Mic, Download, ThumbsUp, ThumbsDown } from "lucide-react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Button } from "@/components/ui/button"
@@ -278,6 +278,19 @@ const markdownComponents: Components = {
 
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user"
+  const [feedback, setFeedback] = useState<"up" | "down" | null>(null)
+
+  const handleFeedback = (type: "up" | "down") => {
+    if (feedback) return // 已经投过票
+    setFeedback(type)
+    // 异步发送到后端（非阻塞）
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+    fetch(`${apiBase}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message_id: message.id, rating: type, query_preview: message.content.slice(0, 200) }),
+    }).catch(() => {}) // 静默失败，不打扰用户
+  }
 
   return (
     <div className={cn("flex items-start gap-3", isUser && "flex-row-reverse")}>
@@ -287,27 +300,53 @@ function MessageBubble({ message }: { message: Message }) {
       )}>
         {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
       </div>
-      <div className={cn(
-        "max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed overflow-hidden",
-        isUser
-          ? "bg-[#3D5A40] text-white rounded-tr-sm"
-          : "bg-white border border-[#C8D6C9] text-[#2D2D2D] rounded-tl-sm"
-      )}>
-        {isUser ? (
-          // User messages render as plain text
-          <div className="whitespace-pre-wrap">{message.content}</div>
-        ) : message.content ? (
-          // Assistant messages render as Markdown (when content exists)
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-            {message.content}
-          </ReactMarkdown>
-        ) : (
-          // 等待 AI 回复——气泡内显示思考动画
-          <div className="flex items-center gap-1.5 py-1">
-            <span className="w-2 h-2 bg-[#3D5A40]/50 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-            <span className="w-2 h-2 bg-[#3D5A40]/50 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-            <span className="w-2 h-2 bg-[#3D5A40]/50 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-            <span className="text-xs text-muted-foreground ml-1">正在思考...</span>
+      <div className="flex flex-col gap-1" style={{ maxWidth: "80%" }}>
+        <div className={cn(
+          "rounded-2xl px-4 py-3 text-sm leading-relaxed overflow-hidden",
+          isUser
+            ? "bg-[#3D5A40] text-white rounded-tr-sm"
+            : "bg-white border border-[#C8D6C9] text-[#2D2D2D] rounded-tl-sm"
+        )}>
+          {isUser ? (
+            <div className="whitespace-pre-wrap">{message.content}</div>
+          ) : message.content ? (
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              {message.content}
+            </ReactMarkdown>
+          ) : (
+            <div className="flex items-center gap-1.5 py-1">
+              <span className="w-2 h-2 bg-[#3D5A40]/50 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="w-2 h-2 bg-[#3D5A40]/50 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+              <span className="w-2 h-2 bg-[#3D5A40]/50 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+              <span className="text-xs text-muted-foreground ml-1">正在思考...</span>
+            </div>
+          )}
+        </div>
+        {/* 反馈按钮 — 仅AI回复且内容完整时显示 */}
+        {!isUser && message.content && (
+          <div className="flex items-center gap-1 px-1">
+            {feedback ? (
+              <span className="text-[11px] text-muted-foreground">
+                {feedback === "up" ? "👍 感谢反馈" : "👎 感谢反馈"}
+              </span>
+            ) : (
+              <>
+                <button
+                  onClick={() => handleFeedback("up")}
+                  className="p-0.5 rounded hover:bg-[#3D5A40]/10 text-muted-foreground hover:text-[#3D5A40] transition-colors"
+                  title="回答有帮助"
+                >
+                  <ThumbsUp className="h-3 w-3" />
+                </button>
+                <button
+                  onClick={() => handleFeedback("down")}
+                  className="p-0.5 rounded hover:bg-[#D97B6C]/10 text-muted-foreground hover:text-[#D97B6C] transition-colors"
+                  title="回答没有帮助"
+                >
+                  <ThumbsDown className="h-3 w-3" />
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>

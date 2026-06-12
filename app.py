@@ -23,7 +23,7 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from src.database.checkpointer import get_db_uri, make_thread_config
 from src.graph.builder import get_compiled_graph
-from src.schemas import ChatRequest, ResumeRequest
+from src.schemas import ChatRequest, FeedbackRequest, ResumeRequest
 from src.tracing import setup_tracing, shutdown_tracing
 
 logger = logging.getLogger(__name__)
@@ -375,6 +375,42 @@ async def resume_endpoint(req: ResumeRequest, request: Request):
         generate_resume_sse(req.edited_plan, req.feedback, request.app.state.graph, req.thread_id),
         media_type="text/event-stream",
     )
+
+
+@app.post("/feedback")
+async def feedback_endpoint(req: FeedbackRequest):
+    """接收用户对AI回复的质量反馈（👍/👎），追加到JSON文件"""
+    from datetime import datetime
+    from pathlib import Path
+    import json
+    from threading import Lock
+
+    _feedback_lock = Lock()
+    _feedback_file = Path(__file__).parent / "data" / "feedback" / "ratings.json"
+
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "message_id": req.message_id,
+        "rating": req.rating,
+        "query_preview": req.query_preview,
+    }
+
+    try:
+        _feedback_file.parent.mkdir(parents=True, exist_ok=True)
+        with _feedback_lock:
+            existing = []
+            if _feedback_file.exists():
+                try:
+                    existing = json.loads(_feedback_file.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    existing = []
+            existing.append(entry)
+            _feedback_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info("Feedback recorded: %s -> %s", req.message_id[:8], req.rating)
+    except Exception:
+        logger.warning("Failed to save feedback", exc_info=True)
+
+    return {"status": "ok", "rating": req.rating}
 
 
 if __name__ == "__main__":
