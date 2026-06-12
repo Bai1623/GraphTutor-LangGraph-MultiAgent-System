@@ -89,6 +89,7 @@ TEXT_EMIT_NODES = {"plan_output", "handle_unknown"}
 
 # All graph nodes whose lifecycle (start/end) we broadcast to the frontend.
 GRAPH_NODES = {
+    "compress_messages",
     "supervisor",
     "academic_router",
     "rag_retrieve",

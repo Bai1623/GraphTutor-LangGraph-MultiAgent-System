@@ -142,3 +142,8 @@ class TutorState(TypedDict):
     # supervisor 启动时从 MemoryStore 加载，注入系统提示词
     # 格式：[关于该用户的记忆]\n- 事实1\n- 事实2\n
     long_term_memory: str
+
+    # ── 会话压缩 ────────────────────────────────────────────
+    # 超出窗口的旧消息压缩后的摘要（增量更新）
+    # 由 compressor.py 在每轮对话前自动维护
+    session_summary: str

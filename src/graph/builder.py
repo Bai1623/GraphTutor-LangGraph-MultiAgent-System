@@ -63,6 +63,39 @@ from src.graph.plan_adversarial import (
 from src.graph.planner import gather_intel, search_policy
 from src.graph.state import TutorState
 from src.graph.supervisor import handle_unknown, route_by_intent, supervisor_node
+from src.tracing import traced_node
+
+
+@traced_node
+async def compress_messages(state: TutorState) -> dict:
+    """三层压缩节点——在 supervisor 之前自动触发。
+
+    每轮对话前检查消息数量，超出窗口时触发压缩：
+    Layer 1 → 最近8轮完整保留
+    Layer 2 → 更早内容压缩为 session_summary
+    Layer 3 → 长期事实由 MemoryStore 管理（不在此节点处理）
+    """
+    messages = state.get("messages", [])
+    if len(messages) <= 16:  # 8 轮 = 16 条，不需要压缩
+        return {}
+
+    try:
+        from src.memory.compressor import compress_conversation
+        old_summary = state.get("session_summary", "")
+        compressed = await compress_conversation(list(messages), existing_summary=old_summary)
+
+        # 提取新摘要
+        new_summary = ""
+        for msg in compressed:
+            if hasattr(msg, "content") and "[会话摘要]" in str(msg.content):
+                new_summary = msg.content
+                break
+
+        return {"messages": compressed, "session_summary": new_summary}
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning("Message compression failed, using full history", exc_info=True)
+        return {}
 
 
 def build_graph() -> StateGraph:
@@ -84,6 +117,9 @@ def build_graph() -> StateGraph:
 
     # ── 步骤 2: 注册全部 19 个节点 ─────────────────────────────────
     # 节点只是"注册"，执行顺序由边决定
+
+    # 记忆压缩节点（入口——在 supervisor 之前触发）
+    graph.add_node("compress_messages", compress_messages)
 
     # 入口节点：意图分类
     graph.add_node("supervisor", supervisor_node)
@@ -117,8 +153,9 @@ def build_graph() -> StateGraph:
 
     # ── 步骤 3: 定义边（图的拓扑结构）────────────────────────────
 
-    # 3.1 设置入口节点
-    graph.set_entry_point("supervisor")
+    # 3.1 设置入口节点——先压缩再分类
+    graph.set_entry_point("compress_messages")
+    graph.add_edge("compress_messages", "supervisor")
 
     # 3.2 Supervisor → 四条分支（条件路由）
     #     根据 supervisor_node 分类的 intent 字段，分发到不同子图
