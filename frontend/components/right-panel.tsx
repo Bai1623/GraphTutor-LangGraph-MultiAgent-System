@@ -224,8 +224,6 @@ export function RightPanel({ logs, nodeEvents, tokenUsage, isInterrupted }: Righ
               <p className="text-xs text-muted-foreground">等待对话...</p>
             )}
           </div>
-        )}
-
           {/* System Logs - 30% height */}
           <div className="flex-[3] flex flex-col overflow-hidden min-h-0">
             <div className="px-4 py-3">

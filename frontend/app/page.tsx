@@ -1,14 +1,23 @@
 "use client"
 
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { LeftSidebar } from "@/components/left-sidebar"
 import { RightPanel, NodeEvent, LogEntry } from "@/components/right-panel"
 import { ChatArea, Message } from "@/components/chat-area"
 import { PlanReview } from "@/components/plan-review"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+const CHAT_STORAGE_KEY = "gaokao_tutor_conversations"
 
-const initialChatHistory: any[] = []
+interface ChatSession {
+  id: string
+  title: string
+  threadId: string | null
+  messages: Message[]
+  updatedAt: string
+}
+
+const initialChatHistory: ChatSession[] = []
 
 function timestamp(): string {
   return new Date().toLocaleTimeString("en-GB", { hour12: false })
@@ -37,12 +46,48 @@ export default function Home() {
   const [isInterrupted, setIsInterrupted] = useState(false)
   const [interruptDraft, setInterruptDraft] = useState("")
   const [isResuming, setIsResuming] = useState(false)
+  const [chatStorageLoaded, setChatStorageLoaded] = useState(false)
   const threadIdRef = useRef<string | null>(null)
   const userIdRef = useRef<string | null>(null)
+  const activeChatIdRef = useRef<string | null>(null)
   const assistantMessageIdRef = useRef<string>("")
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(CHAT_STORAGE_KEY)
+      if (stored) {
+        const sessions = JSON.parse(stored) as ChatSession[]
+        if (Array.isArray(sessions)) {
+          setChatHistory(sessions)
+        }
+      }
+    } catch {
+      localStorage.removeItem(CHAT_STORAGE_KEY)
+    } finally {
+      setChatStorageLoaded(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!chatStorageLoaded) return
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chatHistory))
+  }, [chatHistory, chatStorageLoaded])
+
+  useEffect(() => {
+    const chatId = activeChatIdRef.current
+    if (!chatId) return
+    setChatHistory((prev) =>
+      prev.map((chat) =>
+        chat.id === chatId
+          ? { ...chat, messages, updatedAt: new Date().toISOString() }
+          : chat
+      )
+    )
+  }, [messages])
 
   const handleNewChat = useCallback(() => {
     setSelectedChatId(undefined)
+    activeChatIdRef.current = null
     setMessages([])
     setNodeEvents([])
     setLogs([{ type: "info", message: "[INFO] New chat session started.", ts: timestamp() }])
@@ -53,13 +98,17 @@ export default function Home() {
   }, [])
 
   const handleSelectChat = useCallback((id: string) => {
+    const chat = chatHistory.find((item) => item.id === id)
+    if (!chat) return
+
     setSelectedChatId(id)
-    setMessages([])
+    activeChatIdRef.current = id
+    setMessages(chat.messages)
     setNodeEvents([])
     setIsInterrupted(false)
     setInterruptDraft("")
-    threadIdRef.current = null
-  }, [])
+    threadIdRef.current = chat.threadId
+  }, [chatHistory])
 
   /** Process a single SSE data payload — shared between /stream and /resume */
   const processSSEEvent = useCallback((data: any) => {
@@ -67,6 +116,16 @@ export default function Home() {
 
     if (data.type === "thread_id") {
       threadIdRef.current = data.thread_id
+      const chatId = activeChatIdRef.current
+      if (chatId) {
+        setChatHistory((prev) =>
+          prev.map((chat) =>
+            chat.id === chatId
+              ? { ...chat, threadId: data.thread_id, updatedAt: new Date().toISOString() }
+              : chat
+          )
+        )
+      }
       setLogs((prev) => [
         ...prev,
         { type: "info", message: `[INFO] Thread: ${data.thread_id.slice(0, 8)}...`, ts: timestamp() },
@@ -232,6 +291,21 @@ export default function Home() {
   }, [])
 
   const handleSendMessage = useCallback(async (content: string) => {
+    let chatId = activeChatIdRef.current
+    if (!chatId) {
+      chatId = crypto.randomUUID()
+      const newChat: ChatSession = {
+        id: chatId,
+        title: content.slice(0, 30) + (content.length > 30 ? "..." : ""),
+        threadId: null,
+        messages: [],
+        updatedAt: new Date().toISOString(),
+      }
+      activeChatIdRef.current = chatId
+      setSelectedChatId(chatId)
+      setChatHistory((prev) => [newChat, ...prev])
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
@@ -243,7 +317,6 @@ export default function Home() {
     setTokenUsage({ input: 0, output: 0, total: 0 })
     setIsInterrupted(false)
     setInterruptDraft("")
-    threadIdRef.current = null
     setLogs((prev) => [
       ...prev,
       { type: "info" as const, message: `[INFO] User query: ${content.slice(0, 60)}`, ts: timestamp() },
@@ -261,7 +334,11 @@ export default function Home() {
       const body = await fetchWithErrorHandling(`${API_BASE_URL}/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ query: content, user_id: userIdRef.current }),
+        body: JSON.stringify({
+          query: content,
+          thread_id: threadIdRef.current,
+          user_id: userIdRef.current,
+        }),
       })
 
       if (!body) return
@@ -287,17 +364,8 @@ export default function Home() {
       ])
     } finally {
       setIsLoading(false)
-
-      if (!selectedChatId) {
-        const newChat = {
-          id: Date.now().toString(),
-          title: content.slice(0, 30) + (content.length > 30 ? "..." : ""),
-        }
-        setChatHistory((prev) => [newChat, ...prev])
-        setSelectedChatId(newChat.id)
-      }
     }
-  }, [selectedChatId, fetchWithErrorHandling, consumeSSEStream])
+  }, [fetchWithErrorHandling, consumeSSEStream])
 
   const handleResume = useCallback(async (editedPlan: string) => {
     const threadId = threadIdRef.current
