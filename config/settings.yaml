@@ -33,3 +33,11 @@ supervisor:
     - planning
     - emotional
     - unknown
+
+memory:
+  soft_limit_tokens: 18000              # Trigger compaction before model context is tight
+  compact_input_tokens: 12000           # Maximum old-history input to the summarizer
+  compact_min_overflow_tokens: 3000     # Avoid LLM compaction for tiny overflows
+  recent_turns: 5                       # Complete turns retained verbatim
+  long_term_top_k: 6
+  long_term_max_tokens: 800

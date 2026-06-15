@@ -29,6 +29,24 @@ from src.tracing import setup_tracing, shutdown_tracing
 logger = logging.getLogger(__name__)
 
 
+def _semantic_cache_eligible(query: str) -> bool:
+    """Cache reusable knowledge questions, not greetings or personal requests."""
+    normalized = query.strip().lower()
+    if len(normalized) < 8:
+        return False
+    personal_markers = (
+        "我",
+        "我的",
+        "帮我制定",
+        "计划",
+        "焦虑",
+        "难受",
+        "压力",
+        "心情",
+    )
+    return not any(marker in normalized for marker in personal_markers)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage async resources: tracing, PostgreSQL checkpointer, graph."""
@@ -239,6 +257,7 @@ async def generate_sse(
     query: str,
     graph,
     thread_id: str | None = None,
+    user_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream LangGraph events as Server-Sent Events (SSE).
 
@@ -260,6 +279,7 @@ async def generate_sse(
     """
     if thread_id is None:
         thread_id = str(uuid.uuid4())
+    memory_user_id = user_id or thread_id
     config = make_thread_config(thread_id)
 
     # ── 语义缓存：相似问题查缓存 ──
@@ -268,11 +288,13 @@ async def generate_sse(
         from src.cache.semantic import get_semantic_cache
         from src.rag.indexer import _get_embedding
         cache = get_semantic_cache()
-        emb_fn = _get_embedding()
-        query_embedding = await asyncio.to_thread(emb_fn.embed_query, query)
-        cached_answer = cache.lookup(query_embedding)
-        if cached_answer:
-            logger.info("Semantic cache HIT for query: %s", query[:40])
+        query_embedding = None
+        if _semantic_cache_eligible(query):
+            emb_fn = _get_embedding()
+            query_embedding = await asyncio.to_thread(emb_fn.embed_query, query)
+            cached_answer = cache.lookup(query_embedding)
+            if cached_answer:
+                logger.info("Semantic cache HIT for query: %s", query[:40])
     except Exception:
         logger.warning("Semantic cache check failed, proceeding normally", exc_info=True)
 
@@ -281,9 +303,13 @@ async def generate_sse(
     try:
         from src.memory.long_term import get_memory_store
         store = get_memory_store()
-        long_term_memory = store.summarize_for_prompt(thread_id)
+        long_term_memory = store.summarize_for_prompt(memory_user_id, query)
         if long_term_memory:
-            logger.info("Loaded long-term memory for user %s: %d chars", thread_id[:8], len(long_term_memory))
+            logger.info(
+                "Loaded long-term memory for user %s: %d chars",
+                memory_user_id[:8],
+                len(long_term_memory),
+            )
     except Exception:
         logger.warning("Failed to load long-term memory", exc_info=True)
 
@@ -324,13 +350,18 @@ async def generate_sse(
         try:
             from src.memory.extractor import extract_and_store
             conversation = f"学生: {query}\n\n老师: {assistant_reply[:1000]}"
-            await extract_and_store(thread_id, conversation)
+            await extract_and_store(
+                memory_user_id,
+                conversation,
+                source_thread_id=thread_id,
+            )
         except Exception:
             logger.warning("Failed to extract long-term memory", exc_info=True)
 
         # ── 语义缓存：存储新问答对 ──
         try:
-            cache.store(query, assistant_reply, query_embedding)
+            if query_embedding is not None:
+                cache.store(query, assistant_reply, query_embedding)
         except Exception:
             logger.warning("Failed to store in semantic cache", exc_info=True)
 
@@ -365,7 +396,12 @@ async def generate_resume_sse(
 @app.post("/stream")
 async def stream_endpoint(chat: ChatRequest, request: Request):
     return StreamingResponse(
-        generate_sse(chat.query, request.app.state.graph, thread_id=chat.thread_id),
+        generate_sse(
+            chat.query,
+            request.app.state.graph,
+            thread_id=chat.thread_id,
+            user_id=chat.user_id,
+        ),
         media_type="text/event-stream",
     )
 

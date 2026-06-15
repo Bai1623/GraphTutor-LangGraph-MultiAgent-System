@@ -1,180 +1,288 @@
-"""长期记忆模块——基于 JSON 文件的简单持久化用户记忆
-
-设计思路（最小可行方案）：
-1. 每个用户（通过 thread_id 标识）拥有一个事实列表
-2. 每次对话结束后，用小模型从对话中提取关键事实
-3. 下次对话开始时，将用户事实注入系统提示词
-4. 事实以 JSON 文件存储，简单可靠、无需数据库
-
-存储结构：
-{
-  "thread_abc123": {
-    "facts": [
-      "用户是2025届高三学生，选考物化生",
-      "用户数学较弱，特别是导数部分",
-      "用户每天可用学习时间约4小时",
-      "用户偏好刷题为主的复习方式"
-    ],
-    "last_updated": "2026-06-04T10:30:00"
-  }
-}
-
-面试追问点：
-- 为什么选 JSON 文件而不是数据库？
-  答：长期记忆数据量小（每个用户几条~几十条事实），不需要索引查询。
-  JSON 文件零依赖、零配置，适合 demo 和小规模部署。
-- 为什么不嵌入向量数据库做语义检索？
-  答：用户事实数量少，全量注入提示词即可（几十条约 500 tokens）。
-  语义检索的价值在事实超过百条时才体现。
-"""
+"""Structured cross-session memory with conflict replacement and retrieval."""
 
 from __future__ import annotations
 
 import json
 import logging
-import os
-from datetime import datetime
+import re
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
-from typing import Optional
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field
+
+from src.config import get_setting
 
 logger = logging.getLogger(__name__)
 
-# 存储目录：项目根 / data / memory /
 _STORE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "memory"
 _STORE_FILE = _STORE_DIR / "user_memories.json"
-_MAX_FACTS_PER_USER = 20  # 每人最多保留 20 条事实
+_MAX_MEMORIES_PER_USER = 60
+
+
+class MemoryRecord(BaseModel):
+    memory_id: str = Field(default_factory=lambda: f"mem_{uuid.uuid4().hex}")
+    type: Literal["profile", "progress", "episode"] = "profile"
+    subject: str = ""
+    topic: str = ""
+    content: str
+    confidence: float = 0.8
+    importance: float = 0.6
+    created_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    last_confirmed_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    valid_until: str | None = None
+    source_thread_id: str = ""
+    source_message_ids: list[str] = Field(default_factory=list)
+    status: Literal["active", "superseded", "expired"] = "active"
+
+
+def _terms(text: str) -> set[str]:
+    lowered = text.lower()
+    chinese = set(re.findall(r"[\u3400-\u9fff]{2,}", lowered))
+    latin = set(re.findall(r"[a-z0-9_]+", lowered))
+    # Character bigrams make lexical retrieval useful without another embedding call.
+    bigrams = {
+        lowered[index : index + 2]
+        for index in range(max(len(lowered) - 1, 0))
+        if "\u3400" <= lowered[index] <= "\u9fff"
+    }
+    return chinese | latin | bigrams
+
+
+def _is_expired(record: MemoryRecord) -> bool:
+    if not record.valid_until:
+        return False
+    try:
+        return datetime.fromisoformat(record.valid_until) <= datetime.now(timezone.utc)
+    except ValueError:
+        return False
+
+
+def _recency(record: MemoryRecord) -> float:
+    try:
+        updated = datetime.fromisoformat(record.last_confirmed_at)
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
+        age_days = max((datetime.now(timezone.utc) - updated).days, 0)
+        return 1.0 / (1.0 + age_days / 30)
+    except ValueError:
+        return 0.5
 
 
 class MemoryStore:
-    """JSON 文件持久化的长期记忆存储器。
-
-    线程安全（使用 Lock），支持多用户隔离。
-    自动去重：相同语义的事实不会重复添加。
-    """
+    """Small JSON-backed store suitable for the current single-process demo."""
 
     def __init__(self) -> None:
         self._lock = Lock()
-        self._data: dict = {}
+        self._data: dict[str, dict] = {}
         self._loaded = False
 
-    # ------------------------------------------------------------------
-    # 文件读写
-    # ------------------------------------------------------------------
-
     def _ensure_loaded(self) -> None:
-        """懒加载：首次访问时从磁盘读取，之后使用内存缓存。"""
         if self._loaded:
             return
-
         _STORE_DIR.mkdir(parents=True, exist_ok=True)
-
         if _STORE_FILE.exists():
             try:
-                with open(_STORE_FILE, "r", encoding="utf-8") as f:
-                    self._data = json.load(f)
-                logger.info("Loaded %d user memories from %s", len(self._data), _STORE_FILE)
-            except (json.JSONDecodeError, IOError):
+                with open(_STORE_FILE, "r", encoding="utf-8") as file:
+                    self._data = json.load(file)
+                self._migrate_legacy_entries()
+            except (json.JSONDecodeError, OSError):
                 logger.warning("Failed to load memory file, starting fresh")
                 self._data = {}
-        else:
-            self._data = {}
-
         self._loaded = True
 
-    def _save(self) -> None:
-        """将内存中的数据写回磁盘。
+    def _migrate_legacy_entries(self) -> None:
+        """Convert the previous string-list format in memory, then save lazily."""
+        changed = False
+        for user_id, entry in list(self._data.items()):
+            if "memories" in entry:
+                continue
+            legacy_facts = entry.get("facts", [])
+            entry["memories"] = [
+                MemoryRecord(content=fact).model_dump() for fact in legacy_facts
+            ]
+            entry.pop("facts", None)
+            changed = True
+        if changed:
+            self._save()
 
-        使用临时文件 + 原子重命名，确保写入过程中不会损坏已有数据。
-        """
+    def _save(self) -> None:
         _STORE_DIR.mkdir(parents=True, exist_ok=True)
-        tmp_file = _STORE_FILE.with_suffix(".json.tmp")
+        temporary = _STORE_FILE.with_suffix(".json.tmp")
         try:
-            with open(tmp_file, "w", encoding="utf-8") as f:
-                json.dump(self._data, f, ensure_ascii=False, indent=2)
-            tmp_file.replace(_STORE_FILE)  # 原子替换
+            with open(temporary, "w", encoding="utf-8") as file:
+                json.dump(self._data, file, ensure_ascii=False, indent=2)
+            temporary.replace(_STORE_FILE)
         except Exception:
             logger.warning("Failed to save memories", exc_info=True)
 
-    # ------------------------------------------------------------------
-    # 公共 API
-    # ------------------------------------------------------------------
+    def _records(self, user_id: str) -> list[MemoryRecord]:
+        entry = self._data.get(user_id, {})
+        records: list[MemoryRecord] = []
+        for raw in entry.get("memories", []):
+            try:
+                record = MemoryRecord.model_validate(raw)
+                if _is_expired(record) and record.status == "active":
+                    record.status = "expired"
+                    raw["status"] = "expired"
+                records.append(record)
+            except Exception:
+                logger.warning("Ignoring invalid memory record for user %s", user_id)
+        return records
 
-    def add_fact(self, user_id: str, fact: str) -> bool:
-        """为用户添加一条事实。
+    def upsert_memory(self, user_id: str, memory: MemoryRecord) -> bool:
+        """Insert a memory and supersede an active record with the same key."""
+        normalized_content = memory.content.strip()
+        if len(normalized_content) < 4:
+            return False
+        memory.content = normalized_content
 
-        - 自动去重：如果事实文本完全相同，不添加
-        - 自动裁剪：超过 _MAX_FACTS_PER_USER 条时移除最旧的
-
-        Returns:
-            True 表示添加成功（新增），False 表示重复（未添加）
-        """
         with self._lock:
             self._ensure_loaded()
+            entry = self._data.setdefault(
+                user_id, {"memories": [], "last_updated": ""}
+            )
+            records = self._records(user_id)
+            for record in records:
+                if (
+                    record.status == "active"
+                    and record.content == memory.content
+                    and record.type == memory.type
+                ):
+                    return False
 
-            user_entry = self._data.setdefault(user_id, {"facts": [], "last_updated": ""})
-            facts: list = user_entry["facts"]
+            key = (memory.type, memory.subject, memory.topic)
+            if memory.topic:
+                for raw, record in zip(entry["memories"], records):
+                    if record.status == "active" and (
+                        record.type,
+                        record.subject,
+                        record.topic,
+                    ) == key:
+                        raw["status"] = "superseded"
 
-            # 去重
-            if fact in facts:
-                return False
+            entry["memories"].append(memory.model_dump())
+            active_records = [
+                raw
+                for raw in entry["memories"]
+                if raw.get("status", "active") == "active"
+            ]
+            if len(active_records) > _MAX_MEMORIES_PER_USER:
+                active_ids = {raw["memory_id"] for raw in active_records[-_MAX_MEMORIES_PER_USER:]}
+                for raw in entry["memories"]:
+                    if (
+                        raw.get("status", "active") == "active"
+                        and raw.get("memory_id") not in active_ids
+                    ):
+                        raw["status"] = "superseded"
 
-            # 添加
-            facts.append(fact)
-
-            # 裁剪
-            while len(facts) > _MAX_FACTS_PER_USER:
-                facts.pop(0)
-
-            user_entry["last_updated"] = datetime.now().isoformat()
+            entry["last_updated"] = datetime.now(timezone.utc).isoformat()
             self._save()
             return True
 
-    def get_facts(self, user_id: str) -> list[str]:
-        """获取指定用户的所有事实列表。
+    def add_fact(self, user_id: str, fact: str) -> bool:
+        """Backward-compatible profile-memory insertion."""
+        return self.upsert_memory(user_id, MemoryRecord(content=fact))
 
-        Returns:
-            事实字符串列表，不存在时返回空列表
-        """
+    def get_memories(
+        self,
+        user_id: str,
+        *,
+        include_inactive: bool = False,
+    ) -> list[MemoryRecord]:
         with self._lock:
             self._ensure_loaded()
-            entry = self._data.get(user_id, {})
-            return list(entry.get("facts", []))
+            records = self._records(user_id)
+            if include_inactive:
+                return records
+            return [record for record in records if record.status == "active"]
+
+    def get_facts(self, user_id: str) -> list[str]:
+        return [record.content for record in self.get_memories(user_id)]
+
+    def retrieve(
+        self,
+        user_id: str,
+        query: str,
+        *,
+        intent: str = "",
+        subject: str = "",
+        top_k: int | None = None,
+    ) -> list[MemoryRecord]:
+        top_k = top_k or int(get_setting("memory.long_term_top_k", 6))
+        query_terms = _terms(f"{query} {subject}")
+        type_bonus = {
+            "academic": {"progress": 0.18},
+            "planning": {"profile": 0.12, "progress": 0.08},
+            "emotional": {"episode": 0.15, "profile": 0.05},
+        }.get(intent, {})
+
+        scored: list[tuple[float, MemoryRecord]] = []
+        for record in self.get_memories(user_id):
+            memory_terms = _terms(
+                f"{record.content} {record.subject} {record.topic}"
+            )
+            overlap = (
+                len(query_terms & memory_terms) / max(len(query_terms), 1)
+                if query_terms
+                else 0.0
+            )
+            subject_bonus = 0.15 if subject and record.subject == subject else 0.0
+            score = (
+                0.40 * overlap
+                + 0.25 * record.importance
+                + 0.20 * _recency(record)
+                + 0.15 * record.confidence
+                + subject_bonus
+                + type_bonus.get(record.type, 0.0)
+            )
+            scored.append((score, record))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [record for _, record in scored[:top_k]]
 
     def clear_facts(self, user_id: str) -> None:
-        """清空指定用户的所有记忆（用于测试或隐私重置）。"""
         with self._lock:
             self._ensure_loaded()
             if user_id in self._data:
                 del self._data[user_id]
                 self._save()
 
-    def summarize_for_prompt(self, user_id: str) -> str:
-        """将用户事实格式化为可注入 LLM 系统提示词的文本。
-
-        Returns:
-            格式化后的记忆文本，无记忆时返回空字符串。
-            示例："[关于该用户的记忆]\n- 用户是高三学生\n- 数学较弱\n"
-        """
-        facts = self.get_facts(user_id)
-        if not facts:
+    def summarize_for_prompt(
+        self,
+        user_id: str,
+        query: str = "",
+        *,
+        intent: str = "",
+        subject: str = "",
+    ) -> str:
+        records = self.retrieve(
+            user_id,
+            query,
+            intent=intent,
+            subject=subject,
+        )
+        if not records:
             return ""
-        lines = ["[关于该用户的记忆]", *(f"- {f}" for f in facts)]
+        lines = ["[与当前请求相关的用户记忆]"]
+        for record in records:
+            freshness = record.last_confirmed_at[:10]
+            lines.append(
+                f"- ({record.type}, 确认于{freshness}, 置信度{record.confidence:.2f}) "
+                f"{record.content}"
+            )
         return "\n".join(lines)
 
-
-# ============================================================================
-# 全局单例（进程内共享）
-# ============================================================================
 
 _memory_store: Optional[MemoryStore] = None
 
 
 def get_memory_store() -> MemoryStore:
-    """获取 MemoryStore 全局单例。
-
-    使用懒初始化，只在首次调用时创建，之后复用。
-    """
     global _memory_store
     if _memory_store is None:
         _memory_store = MemoryStore()

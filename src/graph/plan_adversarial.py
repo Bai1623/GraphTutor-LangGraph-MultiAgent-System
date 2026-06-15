@@ -37,6 +37,7 @@ from pydantic import BaseModel
 from src.config import get_setting, load_prompt
 from src.graph.llm import async_invoke_with_fallback, get_fallback_llm, get_node_llm
 from src.graph.state import TutorState
+from src.memory.context_builder import build_memory_context
 from src.tracing import traced_llm_call, traced_node
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,9 @@ async def drafter_node(state: TutorState) -> dict[str, Any]:
 
     user_request = _last_human_query(state)
     intel_summary = state.get("intel_summary", "")
+    memory_context = build_memory_context(state)
+    if memory_context:
+        intel_summary = f"{memory_context}\n\n{intel_summary}"
     revision_notes = state.get("revision_notes", "")
 
     if revision_notes:

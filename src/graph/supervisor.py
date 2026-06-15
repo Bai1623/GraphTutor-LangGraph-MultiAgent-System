@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from src.config import get_setting, load_prompt
 from src.graph.llm import get_node_llm
 from src.graph.state import TutorState
+from src.memory.context_builder import build_memory_context
 from src.tracing import traced_llm_call, traced_node
 
 logger = logging.getLogger(__name__)
@@ -78,11 +79,10 @@ async def supervisor_node(state: TutorState) -> dict:
     user_text = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
 
     # —— 加载长期记忆：首次对话时从 MemoryStore 读取 ——
-    long_term_memory = state.get("long_term_memory", "")
-    memory_section = ""
-    if long_term_memory:
-        memory_section = f"\n\n{long_term_memory}"
-        logger.info("Memory loaded: %d chars for this user", len(long_term_memory))
+    memory_context = build_memory_context(state)
+    memory_section = f"\n\n{memory_context}" if memory_context else ""
+    if memory_context:
+        logger.info("Memory loaded: %d chars for this user", len(memory_context))
 
     temperature = get_setting("supervisor.temperature", 0.0)
     model_name = get_setting("supervisor.model", os.getenv("DEEPSEEK_MODEL", "deepseek-chat"))

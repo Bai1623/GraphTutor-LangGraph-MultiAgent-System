@@ -120,6 +120,12 @@ class TestChatRequestWithThreadId:
         req = ChatRequest(query="hello", thread_id="abc-123")
         assert req.thread_id == "abc-123"
 
+    def test_request_with_user_id(self):
+        from src.schemas import ChatRequest
+
+        req = ChatRequest(query="hello", user_id="student-123")
+        assert req.user_id == "student-123"
+
 
 # ===========================================================================
 # TestSSEWithConfig — streaming with thread config

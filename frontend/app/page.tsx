@@ -38,6 +38,7 @@ export default function Home() {
   const [interruptDraft, setInterruptDraft] = useState("")
   const [isResuming, setIsResuming] = useState(false)
   const threadIdRef = useRef<string | null>(null)
+  const userIdRef = useRef<string | null>(null)
   const assistantMessageIdRef = useRef<string>("")
 
   const handleNewChat = useCallback(() => {
@@ -251,10 +252,16 @@ export default function Home() {
     setIsLoading(true)
 
     try {
+      if (!userIdRef.current && typeof window !== "undefined") {
+        const storedUserId = localStorage.getItem("gaokao_tutor_user_id")
+        const userId = storedUserId || crypto.randomUUID()
+        if (!storedUserId) localStorage.setItem("gaokao_tutor_user_id", userId)
+        userIdRef.current = userId
+      }
       const body = await fetchWithErrorHandling(`${API_BASE_URL}/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ query: content }),
+        body: JSON.stringify({ query: content, user_id: userIdRef.current }),
       })
 
       if (!body) return

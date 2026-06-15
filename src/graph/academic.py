@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 from src.config import get_setting, load_prompt
 from src.graph.llm import async_invoke_with_fallback, get_fallback_llm, get_node_llm
 from src.graph.state import CONTEXT_CLEAR, TutorState
+from src.memory.context_builder import build_memory_context
 from src.rag.retriever import retrieve
 from src.tools.agent_tools import search_knowledge_base, search_web
 from src.tools.search_tool import search as web_search_fn
@@ -459,6 +460,9 @@ async def generate_answer(state: TutorState) -> dict:
         search_context=_format_search(web_results),
         question=question,
     )
+    memory_context = build_memory_context(state)
+    if memory_context:
+        user_prompt = f"{memory_context}\n\n{user_prompt}"
     messages: list = [
         SystemMessage(content=load_prompt("academic_system")),
         HumanMessage(content=user_prompt),

@@ -10,6 +10,7 @@ class ChatRequest(BaseModel):
 
     query: str = Field(max_length=4096)
     thread_id: str | None = None
+    user_id: str | None = Field(default=None, max_length=128)
 
 
 class ResumeRequest(BaseModel):

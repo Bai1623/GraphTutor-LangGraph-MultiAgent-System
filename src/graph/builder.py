@@ -33,7 +33,9 @@ Supervisor (入口)
 
 from __future__ import annotations
 
+from langchain_core.messages import RemoveMessage
 from langgraph.graph import END, StateGraph
+from langgraph.graph.message import REMOVE_ALL_MESSAGES
 
 from src.graph.academic import (
     academic_router,
@@ -75,23 +77,26 @@ async def compress_messages(state: TutorState) -> dict:
     Layer 2 → 更早内容压缩为 session_summary
     Layer 3 → 长期事实由 MemoryStore 管理（不在此节点处理）
     """
-    messages = state.get("messages", [])
-    if len(messages) <= 16:  # 8 轮 = 16 条，不需要压缩
-        return {}
-
     try:
         from src.memory.compressor import compress_conversation
+        messages = state.get("messages", [])
         old_summary = state.get("session_summary", "")
-        compressed = await compress_conversation(list(messages), existing_summary=old_summary)
-
-        # 提取新摘要
-        new_summary = ""
-        for msg in compressed:
-            if hasattr(msg, "content") and "[会话摘要]" in str(msg.content):
-                new_summary = msg.content
-                break
-
-        return {"messages": compressed, "session_summary": new_summary}
+        result = await compress_conversation(
+            list(messages),
+            existing_summary=old_summary,
+        )
+        if not result.compressed:
+            return {}
+        return {
+            "messages": [
+                RemoveMessage(id=REMOVE_ALL_MESSAGES),
+                *result.messages,
+            ],
+            "session_summary": result.summary_json,
+            "compression_count": state.get("compression_count", 0) + 1,
+            "compression_before_tokens": result.before_tokens,
+            "compression_after_tokens": result.after_tokens,
+        }
     except Exception:
         import logging
         logging.getLogger(__name__).warning("Message compression failed, using full history", exc_info=True)

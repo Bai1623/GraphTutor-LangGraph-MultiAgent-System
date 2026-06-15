@@ -27,6 +27,7 @@ from langchain_core.messages import AIMessage, SystemMessage
 from src.config import get_setting, load_prompt
 from src.graph.llm import async_invoke_with_fallback, get_fallback_llm, get_node_llm
 from src.graph.state import TutorState
+from src.memory.context_builder import build_memory_context
 from src.tracing import traced_llm_call, traced_node
 
 
@@ -43,14 +44,17 @@ async def emotional_response(state: TutorState) -> dict:
     llm = get_node_llm("emotional")
 
     # 加载长期记忆，注入系统提示词
-    memory_text = ""
-    long_term_memory = state.get("long_term_memory", "")
-    if long_term_memory:
-        memory_text = f"\n\n{long_term_memory}"
+    memory_context = build_memory_context(state)
+    memory_text = f"\n\n{memory_context}" if memory_context else ""
 
     # 传入完整对话历史 + 长期记忆，让 LLM 理解上下文
     history = [SystemMessage(content=load_prompt("emotional_system") + memory_text)]
     for msg in state["messages"]:
+        if (
+            isinstance(msg, SystemMessage)
+            and str(getattr(msg, "content", "")).startswith("[会话摘要]")
+        ):
+            continue
         history.append(msg)
 
     temperature = get_setting("emotional.temperature", 0.8)

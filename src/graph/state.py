@@ -147,3 +147,6 @@ class TutorState(TypedDict):
     # 超出窗口的旧消息压缩后的摘要（增量更新）
     # 由 compressor.py 在每轮对话前自动维护
     session_summary: str
+    compression_count: int
+    compression_before_tokens: int
+    compression_after_tokens: int

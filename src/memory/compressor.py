@@ -1,166 +1,298 @@
-"""对话记忆三层压缩——控制上下文膨胀，降低 Token 消耗
-
-设计灵感来自 Claude Code 的五层压缩，简化为三层适配高考辅导场景：
-
-Layer 1 — 窗口消息 (Window, 完整保留):
-  最近 N 轮对话（默认 8 轮 = 16 条消息），一字不改保留。
-  这是"工作记忆"——用户刚说了什么、系统刚回了什么。
-
-Layer 2 — 会话摘要 (Session Summary, 增量压缩):
-  超过窗口的旧消息 → LLM 压缩为一段摘要，追加到消息列表头部。
-  每次触发压缩时，旧摘要 + 新溢出消息 → 新一轮 LLM → 新摘要。
-  这是"中期记忆"——"之前聊了什么，关键信息是什么"。
-
-Layer 3 — 长期事实 (Long-term Facts, 提取式):
-  跨会话持久化的离散事实（年级、弱项、偏好等）。
-  已由 MemoryStore + extractor.py 实现。
-
-压缩触发条件:
-- 对话轮数 > WINDOW_SIZE（默认 8 轮）
-- 溢出部分累积到一定长度（> 500 chars）才触发，避免无意义压缩
-
-为什么用 Qwen2.5-7B 做压缩？
-- 摘要任务是轻量级 NLP 任务，小模型足够
-- 零额外成本（复用 Supervisor 模型）
-- 摘要约 200 tokens，比原始消息约 2000 tokens 省 90%
-
-面试能讲的数字：
-- 假设每轮 500 tokens × 20 轮 = 10K tokens 历史
-- 压缩后：8 轮窗口(4K) + 摘要(200) = 4.2K，节省 58%
-- 多轮对话越长效果越明显
-"""
+"""Token-budgeted working memory and structured session compression."""
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Optional
+from dataclasses import dataclass
+from typing import Literal
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, trim_messages
+from pydantic import BaseModel, Field
 
+from src.config import get_setting
 from src.graph.llm import get_node_llm
 
 logger = logging.getLogger(__name__)
 
-# 默认配置
-WINDOW_SIZE = 8       # 保留最近 N 轮对话（每轮 = 用户消息 + AI 回复）
-MIN_OVERFLOW = 500    # 溢出内容至少 N 字符才触发压缩
-SUMMARY_MAX = 400     # 摘要最大长度（字符）
+
+class AnchoredItem(BaseModel):
+    """A compact fact that can be traced back to source messages."""
+
+    text: str
+    source_message_ids: list[str] = Field(default_factory=list)
+
+
+class SessionTask(BaseModel):
+    intent: Literal["academic", "planning", "emotional", "unknown"] = "unknown"
+    subject: str = ""
+    topic: str = ""
+    status: Literal["active", "blocked", "completed"] = "active"
+
+
+class SessionEpisode(BaseModel):
+    """Loss-resistant summary for content that left the recent-message window."""
+
+    task: SessionTask = Field(default_factory=SessionTask)
+    student_state: list[AnchoredItem] = Field(default_factory=list)
+    constraints: list[AnchoredItem] = Field(default_factory=list)
+    decisions: list[AnchoredItem] = Field(default_factory=list)
+    knowledge_progress: list[AnchoredItem] = Field(default_factory=list)
+    open_loops: list[AnchoredItem] = Field(default_factory=list)
+
+    def prompt_text(self) -> str:
+        sections: list[str] = [
+            (
+                f"任务: intent={self.task.intent}, subject={self.task.subject or '未知'}, "
+                f"topic={self.task.topic or '未知'}, status={self.task.status}"
+            )
+        ]
+        labels = (
+            ("学生状态", self.student_state),
+            ("硬约束", self.constraints),
+            ("已确认结论", self.decisions),
+            ("知识进展", self.knowledge_progress),
+            ("待处理事项", self.open_loops),
+        )
+        for label, items in labels:
+            if items:
+                sections.append(f"{label}:\n" + "\n".join(f"- {item.text}" for item in items))
+        return "\n".join(sections)
+
+
+@dataclass(slots=True)
+class CompressionResult:
+    messages: list[BaseMessage]
+    summary_json: str
+    before_tokens: int
+    after_tokens: int
+    compressed: bool
+
+
+def estimate_message_tokens(messages: list[BaseMessage]) -> int:
+    """Use LangChain's model-agnostic approximate token counter."""
+    if not messages:
+        return 0
+    # Asking trim_messages for a very large budget exercises the same approximate
+    # counter used by LangChain without depending on a provider tokenizer.
+    total_chars = sum(len(_message_text(message)) for message in messages)
+    # Chinese characters are commonly close to one token; Latin text is closer
+    # to four characters per token. This conservative blend avoids late compaction.
+    cjk_chars = sum(
+        1
+        for message in messages
+        for char in _message_text(message)
+        if "\u3400" <= char <= "\u9fff"
+    )
+    non_cjk_chars = max(total_chars - cjk_chars, 0)
+    return cjk_chars + (non_cjk_chars + 3) // 4 + len(messages) * 4
+
+
+def _message_text(message: BaseMessage) -> str:
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content
+    return json.dumps(content, ensure_ascii=False, default=str)
+
+
+def _is_session_summary(message: BaseMessage) -> bool:
+    return isinstance(message, SystemMessage) and _message_text(message).startswith("[会话摘要]")
+
+
+def _split_recent_window(
+    messages: list[BaseMessage],
+    *,
+    recent_turns: int,
+) -> tuple[list[BaseMessage], list[BaseMessage]]:
+    """Split on human turns so a user/assistant exchange is not cut in half."""
+    clean_messages = [message for message in messages if not _is_session_summary(message)]
+    index = len(clean_messages) - 1
+    human_turns = 0
+    while index >= 0:
+        if isinstance(clean_messages[index], HumanMessage):
+            human_turns += 1
+            if human_turns > recent_turns:
+                break
+        index -= 1
+    return clean_messages[: index + 1], clean_messages[index + 1 :]
+
+
+def _serialize_messages(messages: list[BaseMessage]) -> str:
+    lines: list[str] = []
+    for message in messages:
+        if isinstance(message, HumanMessage):
+            role = "学生"
+        elif isinstance(message, SystemMessage):
+            role = "系统"
+        else:
+            role = "老师"
+        message_id = getattr(message, "id", None) or "unknown"
+        lines.append(f"[{message_id}] {role}: {_message_text(message)}")
+    return "\n".join(lines)
+
+
+def _parse_episode(existing_summary: str) -> SessionEpisode:
+    if not existing_summary:
+        return SessionEpisode()
+    text = existing_summary.strip()
+    if text.startswith("[会话摘要]"):
+        text = text.removeprefix("[会话摘要]").strip()
+    try:
+        return SessionEpisode.model_validate_json(text)
+    except Exception:
+        # Compatibility with the previous free-text summary.
+        return SessionEpisode(
+            decisions=[AnchoredItem(text=text[:1000], source_message_ids=[])]
+        )
+
+
+def _summary_message(episode: SessionEpisode) -> SystemMessage:
+    return SystemMessage(
+        content=(
+            "[会话摘要]\n"
+            f"{episode.prompt_text()}\n\n"
+            "[结构化数据]\n"
+            f"{episode.model_dump_json()}"
+        )
+    )
+
+
+async def _summarize_episode(
+    overflow_messages: list[BaseMessage],
+    existing_summary: str,
+) -> SessionEpisode:
+    llm = get_node_llm("supervisor", streaming=False)
+    structured_llm = llm.with_structured_output(SessionEpisode)
+    old_episode = _parse_episode(existing_summary)
+    source_text = _serialize_messages(overflow_messages)
+    max_input_tokens = int(get_setting("memory.compact_input_tokens", 12000))
+
+    # Keep complete messages where possible. trim_messages only applies a hard
+    # fallback when a very large overflow would exceed the compressor budget.
+    trimmed = trim_messages(
+        overflow_messages,
+        max_tokens=max_input_tokens,
+        token_counter="approximate",
+        strategy="last",
+        allow_partial=False,
+        start_on="human",
+    )
+    source_text = _serialize_messages(trimmed)
+
+    prompt = (
+        "将旧会话事件和新增对话合并成结构化摘要。严格遵守：\n"
+        "1. 数字、日期、题号、公式、目标分数、学习时长不得改写或猜测；\n"
+        "2. 仅记录对后续辅导有用的信息；\n"
+        "3. 每条信息填写原消息方括号中的 message id；\n"
+        "4. 已完成事项不要继续放在 open_loops；\n"
+        "5. 没有证据的字段保持空，不得编造。\n\n"
+        f"旧会话事件:\n{old_episode.model_dump_json()}\n\n"
+        f"新增对话:\n{source_text}"
+    )
+    return await structured_llm.ainvoke(
+        [
+            SystemMessage(content="你负责高考辅导会话压缩，输出严格的结构化数据。"),
+            HumanMessage(content=prompt),
+        ]
+    )
+
+
+def _deterministic_trim(
+    recent_messages: list[BaseMessage],
+    *,
+    max_tokens: int,
+) -> list[BaseMessage]:
+    """Always keep the latest user turn even when summarization is unavailable."""
+    trimmed = trim_messages(
+        recent_messages,
+        max_tokens=max_tokens,
+        token_counter="approximate",
+        strategy="last",
+        allow_partial=False,
+        start_on="human",
+    )
+    if trimmed:
+        return trimmed
+
+    # A pathological tiny budget must not erase the current request. Return the
+    # latest complete user turn even if it temporarily exceeds the target.
+    for index in range(len(recent_messages) - 1, -1, -1):
+        if isinstance(recent_messages[index], HumanMessage):
+            return recent_messages[index:]
+    return recent_messages[-1:]
 
 
 async def compress_conversation(
-    messages: list,
+    messages: list[BaseMessage],
     *,
-    window_size: int = WINDOW_SIZE,
+    recent_turns: int | None = None,
     existing_summary: str = "",
-) -> list:
-    """压缩对话历史——将超出窗口的旧消息替换为摘要。
-
-    参数:
-        messages: 完整消息列表 [HumanMessage, AIMessage, ...]
-        window_size: 保留最近几轮对话（默认 8）
-        existing_summary: 已有的会话摘要（增量压缩时传入）
-
-    返回:
-        压缩后的消息列表:
-        [SystemMessage(摘要), ...窗口内消息...]
-
-    工作流程:
-    1. 分离窗口内(最近 window_size 轮)和溢出(更早的)
-    2. 如果溢出为空 → 直接返回原消息
-    3. 将溢出消息 + 旧摘要拼成文本，调用小模型生成新摘要
-    4. 返回 [SystemMessage(新摘要), ...窗口内消息]
-    """
-    # 计算轮数（每轮 = HumanMessage + AIMessage 对）
-    pairs = []
-    i = len(messages) - 1
-    window_msgs = []
-    window_count = 0
-
-    # 从后往前取 window_size 轮
-    while i >= 0 and window_count < window_size:
-        msg = messages[i]
-        if isinstance(msg, HumanMessage):
-            window_count += 1
-        window_msgs.insert(0, msg)
-        i -= 1
-
-    # 溢出部分
-    overflow_msgs = messages[:i + 1] if i >= 0 else []
-
-    # 不需要压缩
-    if not overflow_msgs:
-        return list(messages)
-
-    # 溢出太少也不压
-    overflow_text = "\n".join(
-        f"{'学生' if isinstance(m, HumanMessage) else '老师'}: {m.content[:200]}"
-        for m in overflow_msgs
-        if hasattr(m, "content") and m.content
+    soft_limit_tokens: int | None = None,
+) -> CompressionResult:
+    """Compact old turns into a structured episode under a token budget."""
+    recent_turns = recent_turns or int(get_setting("memory.recent_turns", 5))
+    soft_limit_tokens = soft_limit_tokens or int(
+        get_setting("memory.soft_limit_tokens", 18000)
     )
-    if len(overflow_text) < MIN_OVERFLOW:
-        return list(messages)
+    min_overflow_tokens = int(
+        get_setting("memory.compact_min_overflow_tokens", 3000)
+    )
+    before_tokens = estimate_message_tokens(messages)
+    if before_tokens <= soft_limit_tokens:
+        return CompressionResult(
+            messages=list(messages),
+            summary_json=existing_summary,
+            before_tokens=before_tokens,
+            after_tokens=before_tokens,
+            compressed=False,
+        )
 
-    # — 调用小模型生成新摘要 —
+    overflow, recent = _split_recent_window(messages, recent_turns=recent_turns)
+    if not overflow or estimate_message_tokens(overflow) < min_overflow_tokens:
+        trimmed = _deterministic_trim(recent, max_tokens=soft_limit_tokens)
+        after_tokens = estimate_message_tokens(trimmed)
+        return CompressionResult(
+            messages=trimmed,
+            summary_json=existing_summary,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+            compressed=len(trimmed) < len(messages),
+        )
+
     try:
-        new_summary = await _summarize(overflow_text, existing_summary)
+        episode = await _summarize_episode(overflow, existing_summary)
+        summary_json = episode.model_dump_json()
+        summary_message = _summary_message(episode)
+        remaining_budget = max(
+            soft_limit_tokens - estimate_message_tokens([summary_message]),
+            64,
+        )
+        compacted = [
+            summary_message,
+            *_deterministic_trim(recent, max_tokens=remaining_budget),
+        ]
     except Exception:
-        logger.warning("Conversation compression failed, keeping full history", exc_info=True)
-        return list(messages)
+        logger.warning(
+            "Structured conversation compression failed; applying deterministic trim",
+            exc_info=True,
+        )
+        summary_json = existing_summary
+        compacted = recent
 
-    # 构建压缩后的消息列表
-    result = []
-    if new_summary:
-        result.append(SystemMessage(
-            content=f"[会话摘要]\n{new_summary}\n\n--- 最近对话 ---"
-        ))
-    result.extend(window_msgs)
-
+    if not summary_json:
+        compacted = _deterministic_trim(compacted, max_tokens=soft_limit_tokens)
+    after_tokens = estimate_message_tokens(compacted)
     logger.info(
-        "Conversation compressed: %d msgs → %d (summary %d chars)",
-        len(messages), len(result), len(new_summary) if new_summary else 0,
+        "Conversation compressed: messages=%d->%d tokens=%d->%d",
+        len(messages),
+        len(compacted),
+        before_tokens,
+        after_tokens,
     )
-    return result
-
-
-async def _summarize(
-    overflow_text: str,
-    existing_summary: str = "",
-) -> str:
-    """调用 Supervisor 小模型生成增量摘要。
-
-    增量摘要优于重建摘要：
-    - 保留历史重要信息（旧摘要中的关键点）
-    - 只追加新的要点（溢出部分的增量信息）
-    - 避免每次压缩都从头总结，丢失早期关键事实
-    """
-    llm = get_node_llm("supervisor")  # Qwen2.5-7B，零成本
-
-    if existing_summary:
-        prompt = (
-            f"以下是一段对话的旧摘要和新内容。请将新旧信息合并为一段约{SUMMARY_MAX}字的更新摘要，"
-            f"保留所有关键信息（年级、科目弱项、偏好、目标、情绪状态等）。\n\n"
-            f"## 旧摘要\n{existing_summary[:500]}\n\n"
-            f"## 新对话内容\n{overflow_text[:2000]}\n\n"
-            f"请用 2-5 句话输出更新后的摘要："
-        )
-    else:
-        prompt = (
-            f"从以下对话中提取关键信息，生成一段约{SUMMARY_MAX}字的摘要。"
-            f"重点关注：年级/考试年份、学科弱项、学习偏好、情绪状态、重要讨论内容。\n\n"
-            f"## 对话内容\n{overflow_text[:2000]}\n\n"
-            f"请用 2-5 句话输出摘要："
-        )
-
-    messages = [
-        SystemMessage(content="你是一个对话信息压缩助手。从对话中提取关键信息，输出简洁摘要。"),
-        HumanMessage(content=prompt),
-    ]
-
-    response = await llm.ainvoke(messages)
-    summary = response.content.strip()
-
-    # 截断过长摘要
-    if len(summary) > SUMMARY_MAX + 100:
-        summary = summary[:SUMMARY_MAX] + "..."
-
-    return summary
+    return CompressionResult(
+        messages=compacted,
+        summary_json=summary_json,
+        before_tokens=before_tokens,
+        after_tokens=after_tokens,
+        compressed=True,
+    )

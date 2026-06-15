@@ -10,8 +10,14 @@ Layer 3 - 长期事实 (Long-term Facts):
   跨会话持久化的离散事实，通过 MemoryStore 管理
 """
 
-from src.memory.compressor import compress_conversation
-from src.memory.long_term import MemoryStore, get_memory_store
+from src.memory.compressor import SessionEpisode, compress_conversation
+from src.memory.long_term import MemoryRecord, MemoryStore, get_memory_store
 
-__all__ = ["MemoryStore", "get_memory_store", "compress_conversation"]
+__all__ = [
+    "MemoryRecord",
+    "MemoryStore",
+    "SessionEpisode",
+    "compress_conversation",
+    "get_memory_store",
+]
 
