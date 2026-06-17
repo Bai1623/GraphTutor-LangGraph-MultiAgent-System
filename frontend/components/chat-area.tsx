@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Send, Bot, User, Plus, SlidersHorizontal, Mic, Download, ThumbsUp, ThumbsDown } from "lucide-react"
+import { Send, Bot, User, ImageUp, SlidersHorizontal, Mic, Download, ThumbsUp, ThumbsDown, Loader2 } from "lucide-react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Button } from "@/components/ui/button"
@@ -17,15 +17,18 @@ export interface Message {
 interface ChatAreaProps {
   messages: Message[]
   onSendMessage: (content: string) => void
+  onUploadImage?: (file: File, question: string) => Promise<void>
   isLoading?: boolean
 }
 
-export function ChatArea({ messages, onSendMessage, isLoading }: ChatAreaProps) {
+export function ChatArea({ messages, onSendMessage, onUploadImage, isLoading }: ChatAreaProps) {
   const [showExportTip, setShowExportTip] = useState(false)
   const [input, setInput] = useState("")
+  const [isUploadingImage, setIsUploadingImage] = useState(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -37,6 +40,20 @@ export function ChatArea({ messages, onSendMessage, isLoading }: ChatAreaProps) 
     if (input.trim() && !isLoading) {
       onSendMessage(input.trim())
       setInput("")
+    }
+  }
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file || !onUploadImage || isLoading || isUploadingImage) return
+
+    setIsUploadingImage(true)
+    try {
+      await onUploadImage(file, input.trim())
+      setInput("")
+    } finally {
+      setIsUploadingImage(false)
     }
   }
 
@@ -183,10 +200,20 @@ export function ChatArea({ messages, onSendMessage, isLoading }: ChatAreaProps) 
                 type="button"
                 variant="ghost"
                 size="icon"
+                disabled={isLoading || isUploadingImage}
+                onClick={() => fileInputRef.current?.click()}
                 className="h-9 w-9 rounded-full text-muted-foreground hover:text-[#3D5A40] hover:bg-white/50"
+                title="上传试卷图片"
               >
-                <Plus className="h-5 w-5" />
+                {isUploadingImage ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImageUp className="h-5 w-5" />}
               </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={handleImageChange}
+              />
               <Button
                 type="button"
                 variant="ghost"
@@ -212,7 +239,7 @@ export function ChatArea({ messages, onSendMessage, isLoading }: ChatAreaProps) 
               <Button
                 type="submit"
                 size="icon"
-                disabled={!input.trim() || isLoading}
+                disabled={!input.trim() || isLoading || isUploadingImage}
                 className={cn(
                   "h-9 w-9 rounded-full",
                   "bg-[#3D5A40] hover:bg-[#4A6B4D] text-white",

@@ -28,6 +28,8 @@ learning_notes/
 
 # logs
 logs/
+.backend*.log
+.frontend*.log
 
 # Makefile(A scaffold file for future full-stack task automation)
 Makefile

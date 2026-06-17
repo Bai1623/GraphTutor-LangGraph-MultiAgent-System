@@ -11,10 +11,6 @@ rag_retrieve 函数），而非让 LLM 自主选择。这种"预编排"方式
 更适合确定性流程（先检索再回答），比让 LLM 自己决定更可靠。
 """
 
-from src.tools.agent_tools import search_knowledge_base, search_web
-from src.tools.rag_tool import rag_retrieve
-from src.tools.search_tool import get_search_tool, search
-
 __all__ = [
     "rag_retrieve",
     "get_search_tool",
@@ -22,3 +18,22 @@ __all__ = [
     "search_knowledge_base",
     "search_web",
 ]
+
+
+def __getattr__(name: str):
+    if name == "rag_retrieve":
+        from src.tools.rag_tool import rag_retrieve
+
+        return rag_retrieve
+    if name in {"get_search_tool", "search"}:
+        from src.tools.search_tool import get_search_tool, search
+
+        return {"get_search_tool": get_search_tool, "search": search}[name]
+    if name in {"search_knowledge_base", "search_web"}:
+        from src.tools.agent_tools import search_knowledge_base, search_web
+
+        return {
+            "search_knowledge_base": search_knowledge_base,
+            "search_web": search_web,
+        }[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

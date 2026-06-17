@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
@@ -23,7 +23,8 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from src.database.checkpointer import get_db_uri, make_thread_config
 from src.graph.builder import get_compiled_graph
-from src.schemas import ChatRequest, FeedbackRequest, ResumeRequest
+from src.schemas import ChatRequest, FeedbackRequest, OcrResponse, ResumeRequest
+from src.tools.ocr_tool import perform_exam_ocr
 from src.tracing import setup_tracing, shutdown_tracing
 
 logger = logging.getLogger(__name__)
@@ -403,6 +404,20 @@ async def stream_endpoint(chat: ChatRequest, request: Request):
             user_id=chat.user_id,
         ),
         media_type="text/event-stream",
+    )
+
+
+@app.post("/ocr", response_model=OcrResponse)
+async def ocr_endpoint(
+    image: UploadFile = File(...),
+    question: str = Form(default=""),
+):
+    result = await perform_exam_ocr(image, question)
+    return OcrResponse(
+        recognized_text=result.text,
+        query=result.query,
+        filename=result.filename,
+        content_type=result.content_type,
     )
 
 

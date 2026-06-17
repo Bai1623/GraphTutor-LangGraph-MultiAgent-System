@@ -27,3 +27,12 @@ class FeedbackRequest(BaseModel):
     message_id: str
     rating: str  # "up" 或 "down"
     query_preview: str = Field(default="", max_length=500)
+
+
+class OcrResponse(BaseModel):
+    """OCR result returned before the recognized text enters the chat/RAG flow."""
+
+    recognized_text: str
+    query: str
+    filename: str | None = None
+    content_type: str

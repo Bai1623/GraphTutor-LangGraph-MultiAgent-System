@@ -367,6 +367,52 @@ export default function Home() {
     }
   }, [fetchWithErrorHandling, consumeSSEStream])
 
+  const handleUploadExamImage = useCallback(async (file: File, question: string) => {
+    setLogs((prev) => [
+      ...prev,
+      { type: "info", message: `[INFO] OCR upload: ${file.name}`, ts: timestamp() },
+    ])
+
+    const formData = new FormData()
+    formData.append("image", file)
+    formData.append("question", question)
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/ocr`, {
+        method: "POST",
+        headers: { ...getAuthHeaders() },
+        body: formData,
+      })
+
+      if (!response.ok) {
+        let detail = `${response.status} ${response.statusText}`
+        try {
+          const payload = await response.json()
+          detail = payload.detail || detail
+        } catch {
+          // Keep HTTP status text when the server does not return JSON.
+        }
+        throw new Error(detail)
+      }
+
+      const data = await response.json()
+      setLogs((prev) => [
+        ...prev,
+        { type: "info", message: `[INFO] OCR recognized ${data.recognized_text.length} chars.`, ts: timestamp() },
+      ])
+      await handleSendMessage(data.query)
+    } catch (error: any) {
+      setLogs((prev) => [
+        ...prev,
+        { type: "error", message: `[ERROR] OCR failed: ${error.message}`, ts: timestamp() },
+      ])
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now().toString(), role: "assistant", content: `OCR 识别失败：${error.message}` },
+      ])
+    }
+  }, [handleSendMessage])
+
   const handleResume = useCallback(async (editedPlan: string) => {
     const threadId = threadIdRef.current
     if (!threadId) {
@@ -478,6 +524,7 @@ export default function Home() {
         <ChatArea
           messages={messages}
           onSendMessage={handleSendMessage}
+          onUploadImage={handleUploadExamImage}
           isLoading={isLoading && !isInterrupted}
         />
         {isInterrupted && (
