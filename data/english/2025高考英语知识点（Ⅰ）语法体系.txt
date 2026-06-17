@@ -1,0 +1,90 @@
+高考英语知识点（一）—— 语法体系（8大核心板块）
+
+2025年趋势：语法不再单独命题，而是在写作、完形、语法填空等题型中考查实际运用能力。复习重点从"记规则"转向"在语境中识别和运用"。
+
+一、时态与语态
+
+高考高频时态对比：
+- 一般现在时 vs 一般过去时：now/every day vs yesterday/last week
+- 现在完成时（have/has done）：与现在有联系，关键词since/for/already/yet/in the past few years
+- 过去完成时（had done）：过去的过去，关键词by the time/before+过去时间
+- 现在完成进行时（have been doing）：从过去持续到现在还在进行
+- 将来时表达：will do/be going to/be about to/be to do
+
+被动语态各种时态：
+- 一般现在被动：am/is/are done
+- 一般过去被动：was/were done
+- 现在完成被动：have/has been done
+- 情态动词被动：can/must/should be done
+
+二、非谓语动词（高频考点，语法填空必考）
+
+不定式（to do）：
+- 作主语：To learn English well is important. → It is important to learn English well.
+- 作宾语：want/decide/hope/refuse/agree to do
+- 作目的状语：He got up early to catch the bus.
+- 作结果状语（意外）：He hurried to the station, only to find the train had left.
+- 不带to的不定式：make/let/have sb do；had better/would rather do
+
+动名词（doing）：
+- 作主语：Reading is my hobby.
+- 作宾语：enjoy/mind/suggest/avoid/practice doing
+- 固定搭配：look forward to doing/be used to doing/pay attention to doing
+- remember doing（做过）vs remember to do（要去做）
+
+分词（doing/done）：
+- 现在分词表主动/进行：The boy sitting there is my brother.
+- 过去分词表被动/完成：The book written by Lu Xun is famous.
+- 分词作状语：Having finished his homework, he went out. (主动+先于谓语)
+- 独立主格：Weather permitting, we will go out.
+
+三、三大从句
+
+定语从句（修饰名词）：
+- 关系代词：who/whom/whose/that/which
+- 关系副词：when/where/why
+- 非限制性定语从句（有逗号）：which可指代整个主句
+- 介词+关系代词：in which/for which/of which
+- 高频考点：where引导的定语从句（先行词为抽象地点如situation/case/point/stage）
+
+名词性从句（充当名词）：
+- 主语从句：What he said is true./It is obvious that...
+- 宾语从句：I believe (that) he is honest./I don't know whether/if...
+- 表语从句：The question is whether we should go.（注意whether不用if）
+- 同位语从句：There is no doubt that.../The news that he won surprised us.
+- 考点：that vs what——that不充当成分，what充当主语/宾语
+
+状语从句（修饰动词）：
+- 时间：when/while/as/before/after/since/until/the moment
+- 条件：if/unless/as long as/provided that
+- 让步：although/though/even though/while
+- 原因：because/since/as/now that
+- 结果：so...that/such...that
+- as/though倒装结构：Young as he is, he knows a lot./Try as he might, he failed.
+
+四、虚拟语气
+
+if条件句虚拟：
+- 与现在相反：If I were you, I would study harder.
+- 与过去相反：If I had studied harder, I would have passed the exam.
+- 与将来相反：If it were to rain tomorrow, we would cancel the trip.
+- 错综时间：If I had taken your advice then, I wouldn't be in trouble now.（过去→现在）
+
+名词性从句中的虚拟：
+- suggest/insist/recommend/order后的that从句：(should) do
+- It is necessary/important that... (should) do
+- wish后的虚拟：wish I were/wish I had done/wish I could do
+
+五、特殊句式
+
+倒装句：
+- 部分倒装（助动词提前）：Not only...but also/Never/Seldom/Hardly...when
+- Only+状语开头：Only in this way can we succeed.
+- So/Such开头：So beautiful is the girl that everyone likes her.
+
+强调句：It is/was...that...（去掉后句子仍然完整）
+- It was in the park that I met him.（强调地点）
+- It was because he was ill that he didn't come.（强调原因）
+- 与定语从句区别：强调句去掉It is...that后句子完整
+
+省略句：While (I was) waiting, I read a book.

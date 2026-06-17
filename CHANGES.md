@@ -1,5 +1,6 @@
 # 改动记录
 
+| 2026-06-17 | `48c3c9a` | feat: 知识库扩展——添加数学+英语高考知识点大纲 |
 | 2026-06-15 | `04bd1ed` | feat: RAG检索质量评估体系——Recall/Precision/MRR/Hit Rate |
 | 2026-06-12 | `c1c6cce` | feat: 三层对话记忆压缩——控制上下文膨胀，降低多轮Token消耗 |
 | 2026-06-12 | `f41b681` | chore: 更新CHANGES.md记录 |
