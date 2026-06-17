@@ -1,0 +1,161 @@
+2025年高考英语知识点大纲
+
+一、考试大纲核心素养
+
+四大核心素养贯穿全卷：
+- 语言能力：在真实语境中运用听、说、读、写、看等技能理解和表达意义
+- 文化意识：中外文化理解与比较，跨文化沟通意识
+- 思维品质：批判性思维、逻辑推理、创新思维
+- 学习能力：自主学习策略，探究学习能力
+
+2025年关键趋势变化：
+- 语法不再单独命题，在写作、完形等语境中考查
+- 词汇考查强调一词多义、熟词生义、搭配运用
+- 写作更重思辨能力，应用文"反套路"
+- 听力出现多口音素材（英音/美音/澳音）
+- 超纲词占比增至约3%
+
+二、语法知识体系
+
+时态与语态：
+- 现在完成时 vs 过去完成时的区别
+- 一般过去时 vs 过去完成时的语境使用
+- 被动语态的各种时态形式
+
+非谓语动词：
+- 分词作状语：Having finished his homework, he went out.
+- 不定式 vs 动名词：remember to do（记得要做）vs remember doing（记得做过）
+- only to do 表意外结果
+
+定语从句：
+- 关系副词 where/when/why 的用法
+- 关系代词 that/which/who/whose 的区别
+- 非限制性定语从句（which指代整个主句）
+
+名词性从句：
+- 主语从句：What he said is true.
+- 宾语从句：I believe that he is honest.
+- 表语从句：The question is whether we should go.
+- 同位语从句：The news that he won the prize is exciting.
+
+状语从句：
+- 时间（when/while/as/before/after）
+- 条件（if/unless/as long as）
+- 让步（although/though/even though）
+- 原因（because/since/as）
+- as/though 倒装：Young as he is, he knows a lot.
+
+虚拟语气：
+- if条件句：If I were you, I would study harder.
+- wish后的虚拟：I wish I had studied harder.
+- suggest/insist/recommend后的虚拟（should+动词原形）
+
+特殊句式：
+- 倒装句：Only in this way can we succeed.
+- 强调句：It is/was...that...
+- 省略句：While (I was) waiting, I read a book.
+
+主谓一致：就近原则（either...or/neither...nor）、意义一致原则
+
+三、词汇要求
+
+词汇量要求：
+- 课标词汇3500+（含派生词、短语动词）
+- 学术词汇800+（如analyze, phenomenon, significant）
+- 需掌握词根词缀推测能力应对超纲词
+
+三大核心话题词汇：
+
+环境保护：
+- reusable（可重复使用的）、sustainable（可持续的）
+- carbon footprint（碳足迹）、reduce pollution
+- 必考句型：It's everyone's duty to take actions for sustainable development.
+
+中华文化：
+- traditional craftsmanship（传统工艺）
+- cultural heritage（文化遗产）
+- pass down（传承）、folk art（民间艺术）
+- 必考句型：We should make efforts to pass down traditional cultures.
+
+科技与校园生活：
+- extracurricular activities（课外活动）
+- academic performance（学业成绩）
+- volunteer work（志愿工作）
+
+四、阅读理解（约50分）
+
+四大文本类型：
+- 信息类（科普/社会研究）：速读抓主旨，关注首尾段+段落首句
+- 记叙类（小说/传记）：情节发展、人物情感，关注情节线索
+- 议论类（社论/评论）：论点论据、作者态度，分析逻辑关系
+- 应用类（广告/说明书）：定位细节信息，题干关键词定位
+
+核心题型解题技巧：
+- 主旨题：首尾段+重复高频词。典型问法：What is the main idea?
+- 推断题：立足文本，拒绝主观想象。典型问法：What can be inferred?
+- 词义猜测题：上下文逻辑（并列/转折/解释），看前后句关系
+- 细节题：题干关键词→原文定位，识别同义替换
+
+七项能力要求（考纲）：
+1. 理解词汇：通过上下文判断词语在特定语境中的含义
+2. 理解具体信息：提取数字、时间、地点、因果等细节
+3. 理解主旨要义：识别或归纳总结主旨
+4. 理解观点、态度：直接表述的和隐含的都需要分析
+5. 理解写作目的
+6. 推断：推断未明确说明的事件原因、过程、结果
+7. 理解文章结构、类型：辨别体裁、理解逻辑关系
+
+五、写作（约40分）
+
+应用文写作（约15分）：
+高频文体：建议信、申请信、通知、演讲稿、投稿
+
+模板结构：
+首段：写作目的（I'm writing to...）
+中段：2-3个要点，分点论述，层层递进
+尾段：期待回复+礼貌结尾
+
+加分表达：
+- 提出建议：It would be highly beneficial if...
+- 表达感谢：I am truly grateful for your unwavering support.
+- 请求考虑：I would appreciate it if you could take my suggestions into account.
+
+读后续写（约25分）：
+三原则：
+1. 情绪连贯：原文"tears"→续写"sadness"
+2. 情节合理：不添加超现实元素，符合逻辑
+3. 价值正向：结局温暖、有希望、带成长领悟
+
+高分技巧：
+- 动作链描写：She trembled, clutching the letter, then burst into tears.
+- 心理描写层次：从困惑/沮丧/愤怒→触动/反思/领悟
+- 精确动词：用stammered代替said nervously
+- 细节象征与呼应：设计有意义细节贯穿全文
+
+写作评分四个维度：
+1. 内容：完整清楚、合理、逻辑性强
+2. 词汇语法：多样且准确恰当
+3. 篇章结构：结构清晰、衔接有效、意义连贯
+4. 写作规范：拼写正确、标点大小写规范
+
+六、听力理解（约30分）
+
+考查要点：
+- 理解主旨要义，获取事实性的具体信息
+- 对所听内容做出简单推断
+- 理解说话者的意图、观点和态度
+- 适应多口音素材（英音/美音/澳音）
+
+备考建议：
+- 精听泛听结合
+- 变速训练
+- 关注场景词、数字、时间、转折词
+
+七、备考建议
+
+1. 词汇：分层突破，在语境中记忆，每天精准消灭20个"模糊词"
+2. 语法：构建思维导图体系化，聚焦易错点，在真题语篇中验证
+3. 阅读：每日限时训练（每篇7-8分钟），广泛涉猎，学会长难句拆解
+4. 写作：从仿写开始，强化读后续写专项训练，积累话题句型和情感描写词汇
+5. 听力：精听泛听结合，适应多口音，变速训练
+6. 关注时事：拓展文化视野，关注科技、环保、传统文化等热点话题
