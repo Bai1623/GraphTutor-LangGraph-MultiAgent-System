@@ -1,0 +1,56 @@
+suite: rag_retrieval
+kind: rag
+description: RAG retrieval quality over Gaokao Chinese exam documents.
+defaults:
+  top_k: 5
+thresholds:
+  recall_at_k: 0.90
+  mrr: 0.75
+  hit_rate: 0.90
+cases:
+  - id: chinese_2024_xkb1_modern_reading
+    query: 2024年新课标I卷的现代文阅读讲了什么
+    subject: chinese
+    expected_sources:
+      - 2024年高考语文试卷（新课标Ⅰ卷）
+  - id: chinese_2025_national1_essay
+    query: 2025年全国I卷语文作文题目
+    subject: chinese
+    expected_sources:
+      - 2025年高考语文试卷（全国Ⅰ卷）
+  - id: chinese_2024_xkb2_classical_reading
+    query: 新课标II卷文言文阅读内容
+    subject: chinese
+    expected_sources:
+      - 2024年高考语文试卷（新课标Ⅱ卷）
+  - id: chinese_poetry_appreciation
+    query: 古诗鉴赏题的常见题型
+    subject: chinese
+    expected_sources:
+      - 2024年高考语文试卷（新课标Ⅰ卷）
+      - 2024年高考语文试卷（新课标Ⅱ卷）
+      - 2025年高考语文试卷（全国Ⅰ卷）
+      - 2025年高考语文试卷（全国Ⅱ卷）
+  - id: chinese_reading_methods
+    query: 高考语文阅读理解答题技巧
+    subject: chinese
+    expected_sources:
+      - 2024年高考语文试卷（新课标Ⅰ卷）
+      - 2024年高考语文试卷（新课标Ⅱ卷）
+  - id: chinese_2025_national2_literary_text
+    query: 2025年语文全国II卷文学类文本
+    subject: chinese
+    expected_sources:
+      - 2025年高考语文试卷（全国Ⅱ卷）
+  - id: chinese_discursive_text_method
+    query: 论述类文本阅读方法
+    subject: chinese
+    expected_sources:
+      - 2024年高考语文试卷（新课标Ⅰ卷）
+      - 2025年高考语文试卷（全国Ⅰ卷）
+  - id: chinese_poetry_recitation
+    query: 古诗词默写常见篇目
+    subject: chinese
+    expected_sources:
+      - 2024年高考语文试卷（新课标Ⅰ卷）
+      - 2024年高考语文试卷（新课标Ⅱ卷）

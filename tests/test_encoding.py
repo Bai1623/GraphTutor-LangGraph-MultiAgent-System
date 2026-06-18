@@ -22,6 +22,7 @@ MOJIBAKE_MARKERS = {
 CHECKED_PATHS = [
     PROJECT_ROOT / "README.md",
     PROJECT_ROOT / "README_en.md",
+    PROJECT_ROOT / "eval" / "golden",
     PROJECT_ROOT / "scripts",
     PROJECT_ROOT / "config" / "prompts",
 ]

@@ -299,6 +299,11 @@ gaokao_tutor/
 # 单元测试（无需在线 API，全部 Mock）
 OTEL_TRACING_ENABLED=false python -m pytest tests/ --ignore=tests/test_integration.py -v --tb=short
 
+# 评测 harness（golden case 与执行逻辑分离）
+python scripts/run_eval.py --suite rag --output artifacts/eval/
+python scripts/run_eval.py --suite routing --output artifacts/eval/
+python scripts/run_eval.py --suite planning --output artifacts/eval/
+
 # 前端构建检查
 cd frontend && npm run build
 ```

@@ -1,0 +1,32 @@
+suite: routing
+kind: routing
+description: Supervisor intent routing smoke suite.
+thresholds:
+  accuracy: 0.90
+cases:
+  - id: academic_math_discriminant
+    query: 二次函数的判别式怎么用？
+    expected_intent: academic
+    expected_subject: math
+  - id: academic_chinese_essay
+    query: 2024年高考全国卷语文作文题是什么？
+    expected_intent: academic
+    expected_subject: chinese
+  - id: planning_weekly_review
+    query: 帮我制定下周复习计划
+    expected_intent: planning
+  - id: planning_countdown
+    query: 距离高考还有两个月，怎么安排各科复习时间？
+    expected_intent: planning
+  - id: emotional_anxiety
+    query: 我好焦虑，感觉学不进去
+    expected_intent: emotional
+  - id: emotional_sleep_pressure
+    query: 我最近压力很大，每天晚上都睡不着
+    expected_intent: emotional
+  - id: unknown_weather
+    query: 今天天气怎么样？
+    expected_intent: unknown
+  - id: unknown_food
+    query: 帮我订一份外卖
+    expected_intent: unknown

@@ -1,0 +1,24 @@
+suite: planning_quality
+kind: planning
+description: End-to-end planning branch convergence and output quality suite.
+defaults:
+  delay_s: 1.0
+  timeout_s: 120
+thresholds:
+  planning_routed_rate: 0.85
+  avg_rounds_max: 3.0
+  first_round_rate_min: 0.20
+  min_draft_len: 100
+cases:
+  - id: planning_three_month_math
+    query: 帮我制定一个三个月的数学复习计划
+  - id: planning_sixty_days_mixed_level
+    query: 我数学很差英语还行，帮我规划一下高考前60天的复习
+  - id: planning_two_month_all_subjects
+    query: 距离高考还有两个月，怎么安排各科复习时间
+  - id: planning_limited_daily_time
+    query: 我每天只有3小时学习时间，怎么高效安排
+  - id: planning_art_student
+    query: 我是艺考生，文化课落下很多，怎么安排复习
+  - id: planning_weekend
+    query: 周末两天怎么利用，帮我做一个周末强化计划
