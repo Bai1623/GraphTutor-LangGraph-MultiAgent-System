@@ -175,6 +175,7 @@ graph TD
 
 - Python 3.11+
 - Node.js 18+ 和 npm
+- uv（Python 依赖同步与锁文件管理）
 - DeepSeek API Key + SiliconFlow API Key
 - PostgreSQL（可选，不配置时自动降级为无状态模式）
 
@@ -188,23 +189,21 @@ cd gaokao_tutor
 ### 2. 后端
 
 ```bash
-# 创建虚拟环境
-python -m venv .venv
-.venv\Scripts\activate   # Windows
-# source .venv/bin/activate  # macOS/Linux
+# 安装 uv（如果尚未安装）
+python -m pip install uv
 
-# 安装依赖
-pip install -e ".[dev]"
+# 按 uv.lock 同步隔离环境，避免使用系统 Python/Anaconda 里的包
+python -m uv sync --extra dev --locked
 
 # 配置 API Key
 cp .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY 和 SILICONFLOW_API_KEY
 
 # 构建知识库索引
-python scripts/build_index.py
+python -m uv run python scripts/build_index.py
 
 # 启动后端
-python -m uvicorn app:app --host 127.0.0.1 --port 8002
+python -m uv run python -m uvicorn app:app --host 127.0.0.1 --port 8002
 ```
 
 ### 3. 前端
@@ -297,12 +296,15 @@ gaokao_tutor/
 
 ```bash
 # 单元测试（无需在线 API，全部 Mock）
-OTEL_TRACING_ENABLED=false python -m pytest tests/ --ignore=tests/test_integration.py -v --tb=short
+OTEL_TRACING_ENABLED=false python -m uv run python -m pytest tests/ --ignore=tests/test_integration.py -v --tb=short
+
+# 只检查测试收集，适合排查依赖是否可复现
+python -m uv run python -m pytest --collect-only -q
 
 # 评测 harness（golden case 与执行逻辑分离）
-python scripts/run_eval.py --suite rag --output artifacts/eval/
-python scripts/run_eval.py --suite routing --output artifacts/eval/
-python scripts/run_eval.py --suite planning --output artifacts/eval/
+python -m uv run python scripts/run_eval.py --suite rag --output artifacts/eval/
+python -m uv run python scripts/run_eval.py --suite routing --output artifacts/eval/
+python -m uv run python scripts/run_eval.py --suite planning --output artifacts/eval/
 
 # 前端构建检查
 cd frontend && npm run build
