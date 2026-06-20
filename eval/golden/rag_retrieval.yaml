@@ -1,56 +1,264 @@
 suite: rag_retrieval
 kind: rag
-description: RAG retrieval quality over Gaokao Chinese exam documents.
+description: RAG retrieval quality across Chinese exam papers, Math knowledge points, and English knowledge points.
 defaults:
   top_k: 5
 thresholds:
-  recall_at_k: 0.90
-  mrr: 0.75
-  hit_rate: 0.90
+  recall_at_k: 0.85
+  mrr: 0.70
+  hit_rate: 0.85
 cases:
+  # Chinese exam papers: exact paper recall and exam-section recall.
   - id: chinese_2024_xkb1_modern_reading
     query: 2024年新课标I卷的现代文阅读讲了什么
     subject: chinese
+    topic: modern_reading
+    query_type: exact_paper
+    difficulty: easy
     expected_sources:
       - 2024年高考语文试卷（新课标Ⅰ卷）
-  - id: chinese_2025_national1_essay
-    query: 2025年全国I卷语文作文题目
-    subject: chinese
-    expected_sources:
-      - 2025年高考语文试卷（全国Ⅰ卷）
   - id: chinese_2024_xkb2_classical_reading
     query: 新课标II卷文言文阅读内容
     subject: chinese
+    topic: classical_chinese
+    query_type: exact_paper
+    difficulty: easy
     expected_sources:
       - 2024年高考语文试卷（新课标Ⅱ卷）
+  - id: chinese_2025_national1_essay
+    query: 2025年全国I卷语文作文题目
+    subject: chinese
+    topic: essay
+    query_type: exact_paper
+    difficulty: easy
+    expected_sources:
+      - 2025年高考语文试卷（全国Ⅰ卷）
+  - id: chinese_2025_national2_literary_text
+    query: 2025年语文全国II卷文学类文本
+    subject: chinese
+    topic: literary_text
+    query_type: exact_paper
+    difficulty: easy
+    expected_sources:
+      - 2025年高考语文试卷（全国Ⅱ卷）
+  - id: chinese_2024_xkb1_language_use
+    query: 2024新课标一卷语言文字运用考了什么
+    subject: chinese
+    topic: language_use
+    query_type: section_recall
+    difficulty: medium
+    expected_sources:
+      - 2024年高考语文试卷（新课标Ⅰ卷）
+  - id: chinese_2025_national2_practical_text
+    query: 2025全国二卷语文实用类文本阅读材料
+    subject: chinese
+    topic: practical_text
+    query_type: section_recall
+    difficulty: medium
+    expected_sources:
+      - 2025年高考语文试卷（全国Ⅱ卷）
   - id: chinese_poetry_appreciation
     query: 古诗鉴赏题的常见题型
     subject: chinese
+    topic: poetry
+    query_type: broad_topic
+    difficulty: medium
     expected_sources:
       - 2024年高考语文试卷（新课标Ⅰ卷）
       - 2024年高考语文试卷（新课标Ⅱ卷）
       - 2025年高考语文试卷（全国Ⅰ卷）
       - 2025年高考语文试卷（全国Ⅱ卷）
-  - id: chinese_reading_methods
-    query: 高考语文阅读理解答题技巧
+  - id: chinese_poetry_recitation
+    query: 古诗词默写常见篇目
     subject: chinese
+    topic: poetry_recitation
+    query_type: broad_topic
+    difficulty: medium
     expected_sources:
       - 2024年高考语文试卷（新课标Ⅰ卷）
       - 2024年高考语文试卷（新课标Ⅱ卷）
-  - id: chinese_2025_national2_literary_text
-    query: 2025年语文全国II卷文学类文本
+  - id: chinese_reading_methods
+    query: 高考语文阅读理解答题技巧
     subject: chinese
+    topic: reading_strategy
+    query_type: strategy
+    difficulty: hard
     expected_sources:
+      - 2024年高考语文试卷（新课标Ⅰ卷）
+      - 2024年高考语文试卷（新课标Ⅱ卷）
+      - 2025年高考语文试卷（全国Ⅰ卷）
       - 2025年高考语文试卷（全国Ⅱ卷）
   - id: chinese_discursive_text_method
     query: 论述类文本阅读方法
     subject: chinese
+    topic: discursive_text
+    query_type: strategy
+    difficulty: hard
     expected_sources:
       - 2024年高考语文试卷（新课标Ⅰ卷）
       - 2025年高考语文试卷（全国Ⅰ卷）
-  - id: chinese_poetry_recitation
-    query: 古诗词默写常见篇目
-    subject: chinese
+
+  # Math knowledge points: concept recall, formula recall, and strategy recall.
+  - id: math_function_properties
+    query: 函数单调性奇偶性周期性怎么复习
+    subject: math
+    topic: function_properties
+    query_type: concept
+    difficulty: easy
     expected_sources:
-      - 2024年高考语文试卷（新课标Ⅰ卷）
-      - 2024年高考语文试卷（新课标Ⅱ卷）
+      - 2025高考数学知识点（Ⅰ）函数与导数
+  - id: math_derivative_tangent
+    query: 导数的几何意义和切线方程怎么求
+    subject: math
+    topic: derivative
+    query_type: formula
+    difficulty: easy
+    expected_sources:
+      - 2025高考数学知识点（Ⅰ）函数与导数
+  - id: math_derivative_inequality
+    query: 导数压轴题恒成立和不等式证明常用方法
+    subject: math
+    topic: derivative
+    query_type: strategy
+    difficulty: hard
+    expected_sources:
+      - 2025高考数学知识点（Ⅰ）函数与导数
+  - id: math_ellipse_standard_equation
+    query: 椭圆标准方程焦点离心率公式
+    subject: math
+    topic: analytic_geometry
+    query_type: formula
+    difficulty: easy
+    expected_sources:
+      - 2025高考数学知识点（Ⅱ）解析几何与立体几何
+  - id: math_solid_geometry_vector
+    query: 立体几何空间向量法求二面角和线面角
+    subject: math
+    topic: solid_geometry
+    query_type: method
+    difficulty: medium
+    expected_sources:
+      - 2025高考数学知识点（Ⅱ）解析几何与立体几何
+  - id: math_probability_distribution
+    query: 二项分布超几何分布期望方差怎么区分
+    subject: math
+    topic: probability_statistics
+    query_type: concept
+    difficulty: medium
+    expected_sources:
+      - 2025高考数学知识点（Ⅲ）概率统计与数列
+  - id: math_sequence_sum_methods
+    query: 数列求和裂项相消错位相减分组求和
+    subject: math
+    topic: sequence
+    query_type: method
+    difficulty: medium
+    expected_sources:
+      - 2025高考数学知识点（Ⅲ）概率统计与数列
+  - id: math_trigonometry_formula
+    query: 三角函数两角和差公式二倍角公式
+    subject: math
+    topic: trigonometry
+    query_type: formula
+    difficulty: easy
+    expected_sources:
+      - 2025高考数学知识点（Ⅳ）三角向量及备考策略
+  - id: math_vector_dot_product
+    query: 平面向量数量积垂直共线夹角公式
+    subject: math
+    topic: vector
+    query_type: formula
+    difficulty: easy
+    expected_sources:
+      - 2025高考数学知识点（Ⅳ）三角向量及备考策略
+  - id: math_layered_review_strategy
+    query: 数学90到120分冲刺该主攻哪些题型
+    subject: math
+    topic: review_strategy
+    query_type: strategy
+    difficulty: hard
+    expected_sources:
+      - 2025高考数学知识点（Ⅳ）三角向量及备考策略
+
+  # English knowledge points: grammar, vocabulary, reading, writing, cloze, and listening.
+  - id: english_non_finite_verbs
+    query: 英语语法填空非谓语动词 doing done to do 怎么判断
+    subject: english
+    topic: grammar
+    query_type: concept
+    difficulty: medium
+    expected_sources:
+      - 2025高考英语知识点（Ⅰ）语法体系
+  - id: english_attributive_clause
+    query: 定语从句关系代词和关系副词高考怎么考
+    subject: english
+    topic: grammar
+    query_type: concept
+    difficulty: medium
+    expected_sources:
+      - 2025高考英语知识点（Ⅰ）语法体系
+  - id: english_word_roots_affixes
+    query: 高考英语词根词缀怎么推测超纲词
+    subject: english
+    topic: vocabulary
+    query_type: method
+    difficulty: medium
+    expected_sources:
+      - 2025高考英语知识点（Ⅱ）词汇体系
+  - id: english_topic_vocabulary_culture
+    query: 中华文化和环境保护英语作文常用话题词汇
+    subject: english
+    topic: vocabulary
+    query_type: broad_topic
+    difficulty: medium
+    expected_sources:
+      - 2025高考英语知识点（Ⅱ）词汇体系
+      - 2025高考英语知识点（Ⅳ）写作与语言运用
+  - id: english_reading_main_idea
+    query: 英语阅读理解主旨题和最佳标题题怎么做
+    subject: english
+    topic: reading
+    query_type: method
+    difficulty: medium
+    expected_sources:
+      - 2025高考英语知识点（Ⅲ）阅读理解专项
+  - id: english_reading_seven_options
+    query: 七选五解题步骤和上下文逻辑信号
+    subject: english
+    topic: reading
+    query_type: method
+    difficulty: medium
+    expected_sources:
+      - 2025高考英语知识点（Ⅲ）阅读理解专项
+  - id: english_application_letter_template
+    query: 高考英语应用文建议信邀请信申请信模板
+    subject: english
+    topic: writing
+    query_type: template
+    difficulty: easy
+    expected_sources:
+      - 2025高考英语知识点（Ⅳ）写作与语言运用
+  - id: english_continuation_writing
+    query: 读后续写情绪连贯动作链心理描写怎么写
+    subject: english
+    topic: continuation_writing
+    query_type: strategy
+    difficulty: hard
+    expected_sources:
+      - 2025高考英语知识点（Ⅳ）写作与语言运用
+  - id: english_cloze_context_logic
+    query: 完形填空如何根据前后语境和逻辑选词
+    subject: english
+    topic: cloze
+    query_type: method
+    difficulty: medium
+    expected_sources:
+      - 2025高考英语知识点（Ⅳ）写作与语言运用
+  - id: english_listening_keywords
+    query: 高考英语听力如何预判题目捕捉转折词和数字时间
+    subject: english
+    topic: listening
+    query_type: strategy
+    difficulty: medium
+    expected_sources:
+      - 2025高考英语知识点（Ⅳ）写作与语言运用

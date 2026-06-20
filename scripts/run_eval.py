@@ -107,6 +107,41 @@ def _with_thresholds(result: dict[str, Any], thresholds: dict[str, Any]) -> dict
     return result
 
 
+def _rag_metric_summary(details: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(details)
+    if not total:
+        return {
+            "total_cases": 0,
+            "recall_at_k": 0,
+            "precision_at_k": 0,
+            "mrr": 0,
+            "hit_rate": 0,
+        }
+    return {
+        "total_cases": total,
+        "recall_at_k": round(sum(d["recall"] for d in details) / total, 3),
+        "precision_at_k": round(sum(d["precision"] for d in details) / total, 3),
+        "mrr": round(sum(d["reciprocal_rank"] for d in details) / total, 3),
+        "hit_rate": round(sum(1 for d in details if d["hit_count"] > 0) / total, 3),
+    }
+
+
+def _rag_breakdown(details: list[dict[str, Any]], fields: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+    breakdown: dict[str, dict[str, Any]] = {}
+    for field in fields:
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for detail in details:
+            value = detail.get(field)
+            if value is None:
+                continue
+            grouped.setdefault(str(value), []).append(detail)
+        breakdown[field] = {
+            value: _rag_metric_summary(group_details)
+            for value, group_details in sorted(grouped.items())
+        }
+    return breakdown
+
+
 def run_rag_suite(suite: dict[str, Any]) -> dict[str, Any]:
     from src.rag.retriever import retrieve
 
@@ -153,11 +188,15 @@ def run_rag_suite(suite: dict[str, Any]) -> dict[str, Any]:
             "id": case.get("id", f"case_{i}"),
             "query": query,
             "subject": subject,
+            "topic": case.get("topic"),
+            "query_type": case.get("query_type"),
+            "difficulty": case.get("difficulty"),
             "expected_sources": expected_sources,
             "found_sources": [d.get("source", "?") for d in docs],
             "scores": [round(_to_float(d.get("score")), 3) for d in docs],
             "hit_count": hit_count,
             "first_rank": first_rank,
+            "reciprocal_rank": round(rr, 3),
             "recall": round(recall, 3),
             "precision": round(precision, 3),
             "elapsed_ms": round(elapsed_ms, 1),
@@ -173,6 +212,10 @@ def run_rag_suite(suite: dict[str, Any]) -> dict[str, Any]:
         "mrr": round(sum(reciprocal_ranks) / n, 3) if n else 0,
         "hit_rate": round(sum(hits) / n, 3) if n else 0,
         "avg_latency_ms": round(sum(d["elapsed_ms"] for d in details) / n, 1) if n else 0,
+        "breakdown": _rag_breakdown(
+            details,
+            fields=("subject", "topic", "query_type", "difficulty"),
+        ),
     }
     return _with_thresholds(_base_result(suite, metrics, details), suite.get("thresholds", {}))
 
@@ -333,7 +376,27 @@ def render_markdown(result: dict[str, Any]) -> str:
         "| --- | --- |",
     ]
     for name, value in result["metrics"].items():
+        if isinstance(value, dict):
+            continue
         lines.append(f"| {name} | {value} |")
+
+    breakdown = result["metrics"].get("breakdown")
+    if isinstance(breakdown, dict) and breakdown:
+        lines.extend(["", "## Breakdown", ""])
+        for field, groups in breakdown.items():
+            lines.extend([
+                f"### {field}",
+                "",
+                "| Group | Cases | Recall@K | Precision@K | MRR | Hit Rate |",
+                "| --- | ---: | ---: | ---: | ---: | ---: |",
+            ])
+            for group_name, metrics in groups.items():
+                lines.append(
+                    f"| {group_name} | {metrics['total_cases']} | "
+                    f"{metrics['recall_at_k']} | {metrics['precision_at_k']} | "
+                    f"{metrics['mrr']} | {metrics['hit_rate']} |"
+                )
+            lines.append("")
 
     if result.get("thresholds"):
         lines.extend(["", "## Thresholds", "", "| Metric | Actual | Expected | Result |", "| --- | --- | --- | --- |"])

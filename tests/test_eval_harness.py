@@ -52,6 +52,47 @@ def test_threshold_results_report_failures() -> None:
     ]
 
 
+def test_rag_breakdown_groups_metrics() -> None:
+    details = [
+        {
+            "subject": "math",
+            "query_type": "formula",
+            "recall": 1.0,
+            "precision": 0.4,
+            "reciprocal_rank": 1.0,
+            "hit_count": 1,
+        },
+        {
+            "subject": "math",
+            "query_type": "formula",
+            "recall": 0.0,
+            "precision": 0.0,
+            "reciprocal_rank": 0.0,
+            "hit_count": 0,
+        },
+        {
+            "subject": "english",
+            "query_type": "method",
+            "recall": 1.0,
+            "precision": 0.2,
+            "reciprocal_rank": 0.5,
+            "hit_count": 1,
+        },
+    ]
+
+    breakdown = run_eval._rag_breakdown(details, fields=("subject", "query_type"))
+
+    assert breakdown["subject"]["math"] == {
+        "total_cases": 2,
+        "recall_at_k": 0.5,
+        "precision_at_k": 0.2,
+        "mrr": 0.5,
+        "hit_rate": 0.5,
+    }
+    assert breakdown["subject"]["english"]["hit_rate"] == 1.0
+    assert breakdown["query_type"]["formula"]["total_cases"] == 2
+
+
 def test_resolve_output_directory_paths(tmp_path: Path) -> None:
     json_path, md_path = run_eval._resolve_output_paths(tmp_path, "rag_retrieval")
 
