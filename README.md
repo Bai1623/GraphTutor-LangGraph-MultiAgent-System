@@ -312,6 +312,8 @@ cd frontend && npm run build
 
 RAG golden 评测集人工从 `data/chinese/`、`data/math/`、`data/english/` 的高考语文试卷、数学知识点、英语知识点资料中构建，覆盖精确试卷召回、章节召回、宽泛主题检索、概念/公式/方法/模板/策略检索等查询类型。`scripts/run_eval.py --suite rag` 会输出整体 Recall@K、Precision@K、MRR、Hit Rate、平均延迟，并按 `subject`、`topic`、`query_type`、`difficulty` 生成 breakdown，便于发现具体薄弱维度。
 
+评测 JSON 和 Markdown 报告会额外输出 `cost_latency`，包含 `total_tokens`、`node_tokens`、`wall_time_ms`、`node_latency_ms`、`fallback_used`、`tool_rounds`、`retry_count`、`adv_round` 等字段，用于量化 RAG、reranker、Web search 和 Agent tool loop 的成本与延迟变化。
+
 ---
 
 ## 许可证

@@ -15,6 +15,7 @@ import asyncio
 import json
 import sys
 import time
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -70,6 +71,164 @@ def _to_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _to_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _empty_cost_latency() -> dict[str, Any]:
+    return {
+        "total_tokens": 0,
+        "node_tokens": {},
+        "wall_time_ms": 0.0,
+        "node_latency_ms": {},
+        "fallback_used": False,
+        "tool_rounds": 0,
+        "retry_count": 0,
+        "adv_round": 0,
+    }
+
+
+def _merge_numeric_maps(items: list[dict[str, Any]], key: str) -> dict[str, int | float]:
+    merged: dict[str, float] = defaultdict(float)
+    has_float = False
+    for item in items:
+        for name, value in item.get(key, {}).items():
+            number = _to_float(value)
+            has_float = has_float or not float(number).is_integer()
+            merged[str(name)] += number
+    return {
+        name: round(value, 1) if has_float else int(value)
+        for name, value in sorted(merged.items())
+    }
+
+
+def _cost_latency_summary(details: list[dict[str, Any]]) -> dict[str, Any]:
+    costs = [d.get("cost_latency", {}) for d in details]
+    total = len(costs)
+    wall_times = [_to_float(c.get("wall_time_ms")) for c in costs]
+    retry_counts = [_to_int(c.get("retry_count")) for c in costs]
+    adv_rounds = [_to_int(c.get("adv_round")) for c in costs]
+    return {
+        "total_tokens": sum(_to_int(c.get("total_tokens")) for c in costs),
+        "node_tokens": _merge_numeric_maps(costs, "node_tokens"),
+        "wall_time_ms": round(sum(wall_times), 1),
+        "avg_wall_time_ms": round(sum(wall_times) / total, 1) if total else 0,
+        "node_latency_ms": _merge_numeric_maps(costs, "node_latency_ms"),
+        "fallback_used": any(bool(c.get("fallback_used")) for c in costs),
+        "tool_rounds": sum(_to_int(c.get("tool_rounds")) for c in costs),
+        "retry_count": sum(retry_counts),
+        "max_retry_count": max(retry_counts) if retry_counts else 0,
+        "avg_retry_count": round(sum(retry_counts) / total, 2) if total else 0,
+        "adv_round": sum(adv_rounds),
+        "max_adv_round": max(adv_rounds) if adv_rounds else 0,
+        "avg_adv_round": round(sum(adv_rounds) / total, 2) if total else 0,
+    }
+
+
+class EvalTelemetry:
+    """Collect cost and latency signals from LangGraph stream events."""
+
+    def __init__(self) -> None:
+        self.started_at = time.monotonic()
+        self._node_starts: dict[str, float] = {}
+        self.node_latency_ms: dict[str, float] = defaultdict(float)
+        self.node_tokens: dict[str, int] = defaultdict(int)
+        self.total_tokens = 0
+        self.fallback_used = False
+        self.tool_rounds = 0
+        self.retry_count = 0
+        self.adv_round = 0
+
+    def observe_state(self, value: Any) -> None:
+        if not isinstance(value, dict):
+            return
+        self.retry_count = max(self.retry_count, _to_int(value.get("retry_count")))
+        self.adv_round = max(self.adv_round, _to_int(value.get("adv_round")))
+        self.fallback_used = self.fallback_used or bool(value.get("fallback_used", False))
+
+    def observe_event(self, event: dict[str, Any]) -> None:
+        event_type = event.get("event")
+        metadata = event.get("metadata", {}) or {}
+        node_name = metadata.get("langgraph_node") or event.get("name")
+
+        if event_type == "on_tool_start":
+            self.tool_rounds += 1
+
+        if event_type in {"on_chain_start", "on_chain_end"}:
+            event_name = event.get("name")
+            meta_node = metadata.get("langgraph_node")
+            if event_name and event_name == meta_node:
+                if event_type == "on_chain_start":
+                    self._node_starts[event_name] = time.monotonic()
+                else:
+                    start = self._node_starts.pop(event_name, None)
+                    if start is not None:
+                        self.node_latency_ms[event_name] += (time.monotonic() - start) * 1000
+
+            output = event.get("data", {}).get("output")
+            self.observe_state(output)
+
+        if event_type == "on_chat_model_end":
+            output = event.get("data", {}).get("output")
+            usage = getattr(output, "usage_metadata", None)
+            if isinstance(usage, dict):
+                total = _to_int(usage.get("total_tokens"))
+                if total == 0:
+                    total = _to_int(usage.get("input_tokens")) + _to_int(usage.get("output_tokens"))
+                self.total_tokens += total
+                if node_name:
+                    self.node_tokens[str(node_name)] += total
+
+    def finish(self, *, wall_time_ms: float | None = None) -> dict[str, Any]:
+        if wall_time_ms is None:
+            wall_time_ms = (time.monotonic() - self.started_at) * 1000
+        return {
+            "total_tokens": self.total_tokens,
+            "node_tokens": dict(sorted(self.node_tokens.items())),
+            "wall_time_ms": round(wall_time_ms, 1),
+            "node_latency_ms": {
+                name: round(value, 1)
+                for name, value in sorted(self.node_latency_ms.items())
+            },
+            "fallback_used": self.fallback_used,
+            "tool_rounds": self.tool_rounds,
+            "retry_count": self.retry_count,
+            "adv_round": self.adv_round,
+        }
+
+
+async def _run_graph_with_telemetry(
+    graph: Any,
+    input_data: dict[str, Any],
+    config: dict[str, Any],
+    timeout_s: float,
+) -> tuple[dict[str, Any], dict[str, Any], str | None]:
+    telemetry = EvalTelemetry()
+    state: dict[str, Any] = {}
+    error: str | None = None
+
+    async def _consume() -> None:
+        nonlocal state
+        async for event in graph.astream_events(input_data, config=config, version="v2"):
+            telemetry.observe_event(event)
+            output = event.get("data", {}).get("output")
+            if isinstance(output, dict):
+                state.update(output)
+
+    try:
+        await asyncio.wait_for(_consume(), timeout=timeout_s)
+    except asyncio.TimeoutError:
+        error = "timeout"
+    except Exception as exc:
+        error = str(exc)
+
+    telemetry.observe_state(state)
+    return state, telemetry.finish(), error
 
 
 def _threshold_results(metrics: dict[str, Any], thresholds: dict[str, Any]) -> list[dict[str, Any]]:
@@ -165,6 +324,12 @@ def run_rag_suite(suite: dict[str, Any]) -> dict[str, Any]:
         start = time.monotonic()
         result = retrieve(query=query, subject=subject, top_k=top_k)
         elapsed_ms = (time.monotonic() - start) * 1000
+        cost_latency = _empty_cost_latency()
+        cost_latency.update({
+            "wall_time_ms": round(elapsed_ms, 1),
+            "node_latency_ms": {"rag_retrieve": round(elapsed_ms, 1)},
+            "tool_rounds": 1,
+        })
 
         docs = result.get("docs", [])
         hit_count = 0
@@ -200,6 +365,7 @@ def run_rag_suite(suite: dict[str, Any]) -> dict[str, Any]:
             "recall": round(recall, 3),
             "precision": round(precision, 3),
             "elapsed_ms": round(elapsed_ms, 1),
+            "cost_latency": cost_latency,
         })
         print(f"  [{i}/{len(cases)}] {case.get('id')} hit={hit_count} recall={recall:.2f}")
 
@@ -212,6 +378,7 @@ def run_rag_suite(suite: dict[str, Any]) -> dict[str, Any]:
         "mrr": round(sum(reciprocal_ranks) / n, 3) if n else 0,
         "hit_rate": round(sum(hits) / n, 3) if n else 0,
         "avg_latency_ms": round(sum(d["elapsed_ms"] for d in details) / n, 1) if n else 0,
+        "cost_latency": _cost_latency_summary(details),
         "breakdown": _rag_breakdown(
             details,
             fields=("subject", "topic", "query_type", "difficulty"),
@@ -235,6 +402,11 @@ async def run_routing_suite(suite: dict[str, Any]) -> dict[str, Any]:
         start = time.monotonic()
         output = await supervisor_node({"messages": [HumanMessage(content=case["query"])]})
         elapsed_ms = (time.monotonic() - start) * 1000
+        cost_latency = _empty_cost_latency()
+        cost_latency.update({
+            "wall_time_ms": round(elapsed_ms, 1),
+            "node_latency_ms": {"supervisor": round(elapsed_ms, 1)},
+        })
 
         expected_intent = case["expected_intent"]
         expected_subject = case.get("expected_subject")
@@ -256,6 +428,7 @@ async def run_routing_suite(suite: dict[str, Any]) -> dict[str, Any]:
             "keypoints": output.get("keypoints", []),
             "passed": passed,
             "elapsed_ms": round(elapsed_ms, 1),
+            "cost_latency": cost_latency,
         })
         print(f"  [{i}/{len(cases)}] {case.get('id')} {actual_intent} {'OK' if passed else 'FAIL'}")
 
@@ -265,6 +438,7 @@ async def run_routing_suite(suite: dict[str, Any]) -> dict[str, Any]:
         "correct": correct,
         "accuracy": round(correct / n, 3) if n else 0,
         "avg_latency_ms": round(sum(d["elapsed_ms"] for d in details) / n, 1) if n else 0,
+        "cost_latency": _cost_latency_summary(details),
     }
     return _with_thresholds(_base_result(suite, metrics, details), suite.get("thresholds", {}))
 
@@ -292,25 +466,22 @@ async def run_planning_suite(suite: dict[str, Any]) -> dict[str, Any]:
     for i, case in enumerate(cases, 1):
         thread_id = f"eval-planning-{case.get('id', i)}"
         start = time.monotonic()
-        try:
-            result = await asyncio.wait_for(
-                graph.ainvoke(
-                    {"messages": [HumanMessage(content=case["query"])]},
-                    config=make_thread_config(thread_id),
-                ),
-                timeout=timeout_s,
-            )
-            error = None
-        except asyncio.TimeoutError:
-            result = {}
-            error = "timeout"
-        except Exception as exc:
-            result = {}
-            error = str(exc)
+        result, cost_latency, error = await _run_graph_with_telemetry(
+            graph,
+            {"messages": [HumanMessage(content=case["query"])]},
+            make_thread_config(thread_id),
+            timeout_s,
+        )
         elapsed_s = time.monotonic() - start
+        cost_latency["wall_time_ms"] = round(elapsed_s * 1000, 1)
 
         intent = result.get("intent", "unknown")
         adv_round = int(result.get("adv_round", 0) or 0)
+        cost_latency["adv_round"] = max(_to_int(cost_latency.get("adv_round")), adv_round)
+        cost_latency["retry_count"] = max(
+            _to_int(cost_latency.get("retry_count")),
+            _to_int(result.get("retry_count")),
+        )
         draft_len = len(result.get("draft", "") or result.get("plan", "") or "")
         if intent == "planning" and not error:
             rounds.append(adv_round)
@@ -325,6 +496,7 @@ async def run_planning_suite(suite: dict[str, Any]) -> dict[str, Any]:
             "draft_len": draft_len,
             "error": error,
             "elapsed_s": round(elapsed_s, 1),
+            "cost_latency": cost_latency,
         })
         status = "ERR" if error else intent
         print(f"  [{i}/{len(cases)}] {case.get('id')} {status} rounds={adv_round}")
@@ -345,6 +517,7 @@ async def run_planning_suite(suite: dict[str, Any]) -> dict[str, Any]:
         "round_distribution": dict(sorted(Counter(rounds).items())),
         "min_draft_len": min(draft_lengths) if draft_lengths else 0,
         "avg_latency_s": round(sum(d["elapsed_s"] for d in details) / n, 1) if n else 0,
+        "cost_latency": _cost_latency_summary(details),
     }
     return _with_thresholds(_base_result(suite, metrics, details), suite.get("thresholds", {}))
 
@@ -379,6 +552,35 @@ def render_markdown(result: dict[str, Any]) -> str:
         if isinstance(value, dict):
             continue
         lines.append(f"| {name} | {value} |")
+
+    cost_latency = result["metrics"].get("cost_latency")
+    if isinstance(cost_latency, dict) and cost_latency:
+        lines.extend(["", "## Cost And Latency", ""])
+        lines.extend([
+            "| Metric | Value |",
+            "| --- | --- |",
+            f"| total_tokens | {cost_latency.get('total_tokens', 0)} |",
+            f"| wall_time_ms | {cost_latency.get('wall_time_ms', 0)} |",
+            f"| avg_wall_time_ms | {cost_latency.get('avg_wall_time_ms', 0)} |",
+            f"| fallback_used | {cost_latency.get('fallback_used', False)} |",
+            f"| tool_rounds | {cost_latency.get('tool_rounds', 0)} |",
+            f"| retry_count | {cost_latency.get('retry_count', 0)} |",
+            f"| max_retry_count | {cost_latency.get('max_retry_count', 0)} |",
+            f"| adv_round | {cost_latency.get('adv_round', 0)} |",
+            f"| max_adv_round | {cost_latency.get('max_adv_round', 0)} |",
+        ])
+
+        node_tokens = cost_latency.get("node_tokens", {})
+        if isinstance(node_tokens, dict) and node_tokens:
+            lines.extend(["", "### Node Tokens", "", "| Node | Tokens |", "| --- | ---: |"])
+            for node, tokens in node_tokens.items():
+                lines.append(f"| {node} | {tokens} |")
+
+        node_latency = cost_latency.get("node_latency_ms", {})
+        if isinstance(node_latency, dict) and node_latency:
+            lines.extend(["", "### Node Latency", "", "| Node | Latency ms |", "| --- | ---: |"])
+            for node, latency in node_latency.items():
+                lines.append(f"| {node} | {latency} |")
 
     breakdown = result["metrics"].get("breakdown")
     if isinstance(breakdown, dict) and breakdown:
