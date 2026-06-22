@@ -38,6 +38,7 @@ from src.config import get_setting, load_prompt
 from src.graph.llm import async_invoke_with_fallback, get_fallback_llm, get_node_llm
 from src.graph.state import TutorState
 from src.rag.retriever import retrieve
+from src.tools.policy_search import format_policy_results, search_official_policy
 from src.tools.search_tool import search as web_search_fn
 from src.tracing import traced_llm_call, traced_node, traced_search
 
@@ -70,23 +71,60 @@ async def search_policy(state: TutorState) -> dict:
     query = f"{year}年高考最新政策 考试时间安排 科目改革"
 
     with traced_search(query=query, timeout=_SEARCH_TIMEOUT) as span:
+        policy_source = "none"
+        try:
+            search_results = await asyncio.wait_for(
+                asyncio.to_thread(
+                    search_official_policy,
+                    query,
+                    topic="高考政策",
+                    limit=5,
+                ),
+                timeout=_SEARCH_TIMEOUT,
+            )
+            if search_results:
+                policy_source = "official_mcp"
+                span.set_attribute("search.policy_source", policy_source)
+                span.set_attribute("search.result_count", len(search_results))
+                span.set_attribute("search.timed_out", False)
+                return {
+                    "search_results": search_results,
+                    "policy_source": policy_source,
+                    "policy_query": query,
+                }
+        except asyncio.TimeoutError:
+            span.set_attribute("search.official_timed_out", True)
+        except Exception:
+            logger.warning("Official policy MCP search failed, falling back to web search", exc_info=True)
+            span.set_attribute("search.official_failed", True)
+
         try:
             search_results = await asyncio.wait_for(
                 asyncio.to_thread(web_search_fn, query),
                 timeout=_SEARCH_TIMEOUT,
             )
+            policy_source = "web_fallback" if search_results else "none"
             span.set_attribute("search.result_count", len(search_results))
+            span.set_attribute("search.policy_source", policy_source)
             span.set_attribute("search.timed_out", False)
         except asyncio.TimeoutError:
             search_results = []
+            policy_source = "none"
             span.set_attribute("search.result_count", 0)
+            span.set_attribute("search.policy_source", policy_source)
             span.set_attribute("search.timed_out", True)
         except Exception:
             search_results = []
+            policy_source = "none"
             span.set_attribute("search.result_count", 0)
+            span.set_attribute("search.policy_source", policy_source)
             span.set_attribute("search.timed_out", False)
 
-    return {"search_results": search_results}
+    return {
+        "search_results": search_results,
+        "policy_source": policy_source,
+        "policy_query": query,
+    }
 
 
 # ============================================================================
@@ -222,7 +260,14 @@ async def gather_intel(state: TutorState) -> dict:
         _gather_resource_intel(state),
     )
 
-    intel_summary = f"【情绪分析】\n{emotional_intel}\n\n{resource_intel}"
+    policy_info = format_policy_results(state.get("search_results", []))
+    policy_source = state.get("policy_source", "none")
+    if policy_info:
+        policy_section = f"【政策信息】\n来源: {policy_source}\n{policy_info}"
+    else:
+        policy_section = "【政策信息】\n未获取到官方政策信息。"
+
+    intel_summary = f"{policy_section}\n\n【情绪分析】\n{emotional_intel}\n\n{resource_intel}"
 
     return {
         "emotional_intel": emotional_intel,

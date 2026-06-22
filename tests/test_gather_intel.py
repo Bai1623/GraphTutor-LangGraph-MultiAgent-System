@@ -169,6 +169,54 @@ class TestGatherIntel:
         assert result["draft"] == ""
         assert result["consensus"] is False
 
+    @patch("src.graph.planner.retrieve")
+    @patch("src.graph.planner.web_search_fn")
+    @patch("src.graph.planner.get_fallback_llm")
+    @patch("src.graph.planner.get_node_llm")
+    async def test_policy_info_is_included_in_intel_summary(
+        self, mock_get_llm, mock_get_fallback, mock_web_search, mock_retrieve
+    ):
+        mock_llm = MagicMock()
+        mock_llm.ainvoke = AsyncMock(return_value=MagicMock(content="情绪稳定"))
+        mock_get_llm.return_value = mock_llm
+        mock_get_fallback.return_value = MagicMock()
+        mock_retrieve.return_value = {"docs": [], "is_hit": False}
+        mock_web_search.return_value = []
+
+        state = {
+            "messages": [HumanMessage(content="帮我做志愿规划")],
+            "intent": "planning",
+            "subject": "",
+            "keypoints": [],
+            "context": [],
+            "search_results": [
+                {
+                    "source": "广东省教育考试院",
+                    "url": "https://eea.gd.gov.cn/policy",
+                    "published_at": "2026-06-10",
+                    "province": "广东",
+                    "topic": "志愿填报",
+                    "content": "官方志愿填报安排",
+                    "confidence": "official",
+                }
+            ],
+            "policy_source": "official_mcp",
+            "plan": "",
+            "retry_count": 0,
+            "hallucination_detected": False,
+            "rewritten_query": "",
+            "hallucination_reason": "",
+            "emotional_intel": "",
+            "resource_intel": "",
+            "intel_summary": "",
+        }
+        result = await gather_intel(state)
+
+        assert "政策信息" in result["intel_summary"]
+        assert "official_mcp" in result["intel_summary"]
+        assert "广东省教育考试院" in result["intel_summary"]
+        assert "官方志愿填报安排" in result["intel_summary"]
+
     @patch("src.graph.planner.retrieve", side_effect=Exception("chromadb down"))
     @patch("src.graph.planner.web_search_fn", side_effect=Exception("network error"))
     @patch("src.graph.planner.get_fallback_llm")

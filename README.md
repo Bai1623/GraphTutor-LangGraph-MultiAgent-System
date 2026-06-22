@@ -199,6 +199,13 @@ python -m uv sync --extra dev --locked
 cp .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY 和 SILICONFLOW_API_KEY
 
+# 可选：官方政策 / 招生数据 MCP。优先使用 MCP，失败时自动回退到通用 Web search。
+# 二选一配置即可：
+# POLICY_MCP_URL=http://127.0.0.1:8765/mcp
+# POLICY_MCP_COMMAND="python path/to/policy_mcp_server.py"
+# POLICY_MCP_TOOL=policy_search
+# POLICY_MCP_TIMEOUT_SECONDS=10
+
 # 构建知识库索引
 python -m uv run python scripts/build_index.py
 
