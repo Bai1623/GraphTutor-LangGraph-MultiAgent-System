@@ -103,6 +103,22 @@ def get_ocr_llm() -> Any:
 
 async def perform_exam_ocr(upload: UploadFile, question: str | None = None) -> OcrResult:
     image_bytes, content_type = await read_image_upload(upload)
+    return await perform_exam_ocr_bytes(
+        image_bytes,
+        content_type,
+        filename=upload.filename,
+        question=question,
+    )
+
+
+async def perform_exam_ocr_bytes(
+    image_bytes: bytes,
+    content_type: str,
+    *,
+    filename: str | None = None,
+    question: str | None = None,
+) -> OcrResult:
+    """Run the existing vision OCR fallback on already-read image bytes."""
     data_url = _build_data_url(image_bytes, content_type)
     from langchain_core.messages import HumanMessage
 
@@ -131,6 +147,6 @@ async def perform_exam_ocr(upload: UploadFile, question: str | None = None) -> O
     return OcrResult(
         text=text,
         query=build_exam_ocr_query(text, question),
-        filename=upload.filename,
+        filename=filename,
         content_type=content_type,
     )

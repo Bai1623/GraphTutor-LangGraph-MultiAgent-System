@@ -23,7 +23,14 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from src.database.checkpointer import get_db_uri, make_thread_config
 from src.graph.builder import get_compiled_graph
-from src.schemas import ChatRequest, FeedbackRequest, OcrResponse, ResumeRequest
+from src.schemas import (
+    ChatRequest,
+    DocumentParseResponse,
+    FeedbackRequest,
+    OcrResponse,
+    ResumeRequest,
+)
+from src.tools.document_question_parser import parse_exam_uploads
 from src.tools.ocr_tool import perform_exam_ocr
 from src.tracing import setup_tracing, shutdown_tracing
 
@@ -418,6 +425,22 @@ async def ocr_endpoint(
         query=result.query,
         filename=result.filename,
         content_type=result.content_type,
+    )
+
+
+@app.post("/documents/parse", response_model=DocumentParseResponse)
+async def document_parse_endpoint(
+    files: list[UploadFile] = File(...),
+    question: str = Form(default=""),
+):
+    result = await parse_exam_uploads(files, question)
+    return DocumentParseResponse(
+        questions=[item.to_dict() for item in result.questions],
+        recognized_text=result.recognized_text,
+        query=result.query,
+        filenames=result.filenames,
+        parser=result.parser,
+        segmenter_used=result.segmenter_used,
     )
 
 

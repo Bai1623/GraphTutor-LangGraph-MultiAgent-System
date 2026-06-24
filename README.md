@@ -206,11 +206,40 @@ cp .env.example .env
 # POLICY_MCP_TOOL=policy_search
 # POLICY_MCP_TIMEOUT_SECONDS=10
 
+# 可选：试卷/讲义解析 MCP。PDF、DOCX 依赖 MCP；图片在 MCP 失败时回退现有视觉 OCR。
+# DOCUMENT_MCP_URL=http://127.0.0.1:8766/mcp
+# DOCUMENT_MCP_COMMAND="python path/to/document_mcp_server.py"
+# PDF_PARSE_MCP_TOOL=pdf_parse
+# DOCX_PARSE_MCP_TOOL=docx_parse
+# IMAGE_OCR_MCP_TOOL=image_ocr_plus
+# QUESTION_SEGMENTER_MCP_TOOL=question_segmenter
+
 # 构建知识库索引
 python -m uv run python scripts/build_index.py
 
 # 启动后端
 python -m uv run python -m uvicorn app:app --host 127.0.0.1 --port 8002
+```
+
+`POST /documents/parse` 接收一个 PDF/DOCX 或多张图片，依次调用对应解析工具和
+`question_segmenter`，统一返回题目级结构：
+
+```json
+{
+  "questions": [
+    {
+      "number": "17",
+      "subject": "math",
+      "stem": "...",
+      "options": [],
+      "figures": [],
+      "detected_knowledge_points": ["导数", "函数零点"],
+      "source_pages": [3]
+    }
+  ],
+  "parser": "mcp:pdf_parse",
+  "segmenter_used": false
+}
 ```
 
 ### 3. 前端

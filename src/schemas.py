@@ -36,3 +36,28 @@ class OcrResponse(BaseModel):
     query: str
     filename: str | None = None
     content_type: str
+
+
+class ParsedQuestionResponse(BaseModel):
+    """A normalized question extracted from an exam document."""
+
+    number: str
+    subject: str | None = None
+    stem: str
+    options: list[str] = Field(default_factory=list)
+    figures: list[dict] = Field(default_factory=list)
+    detected_knowledge_points: list[str] = Field(default_factory=list)
+    answer: str | None = None
+    analysis: str | None = None
+    source_pages: list[int] = Field(default_factory=list)
+
+
+class DocumentParseResponse(BaseModel):
+    """Structured result returned by the document-question MCP pipeline."""
+
+    questions: list[ParsedQuestionResponse]
+    recognized_text: str
+    query: str
+    filenames: list[str]
+    parser: str
+    segmenter_used: bool

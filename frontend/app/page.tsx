@@ -367,18 +367,19 @@ export default function Home() {
     }
   }, [fetchWithErrorHandling, consumeSSEStream])
 
-  const handleUploadExamImage = useCallback(async (file: File, question: string) => {
+  const handleUploadExamDocuments = useCallback(async (files: File[], question: string) => {
+    const filenames = files.map((file) => file.name).join(", ")
     setLogs((prev) => [
       ...prev,
-      { type: "info", message: `[INFO] OCR upload: ${file.name}`, ts: timestamp() },
+      { type: "info", message: `[INFO] Document upload: ${filenames}`, ts: timestamp() },
     ])
 
     const formData = new FormData()
-    formData.append("image", file)
+    files.forEach((file) => formData.append("files", file))
     formData.append("question", question)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/ocr`, {
+      const response = await fetch(`${API_BASE_URL}/documents/parse`, {
         method: "POST",
         headers: { ...getAuthHeaders() },
         body: formData,
@@ -398,17 +399,21 @@ export default function Home() {
       const data = await response.json()
       setLogs((prev) => [
         ...prev,
-        { type: "info", message: `[INFO] OCR recognized ${data.recognized_text.length} chars.`, ts: timestamp() },
+        {
+          type: "info",
+          message: `[INFO] Parsed ${data.questions.length} questions via ${data.parser}${data.segmenter_used ? " + question_segmenter" : ""}.`,
+          ts: timestamp(),
+        },
       ])
       await handleSendMessage(data.query)
     } catch (error: any) {
       setLogs((prev) => [
         ...prev,
-        { type: "error", message: `[ERROR] OCR failed: ${error.message}`, ts: timestamp() },
+        { type: "error", message: `[ERROR] Document parsing failed: ${error.message}`, ts: timestamp() },
       ])
       setMessages((prev) => [
         ...prev,
-        { id: Date.now().toString(), role: "assistant", content: `OCR 识别失败：${error.message}` },
+        { id: Date.now().toString(), role: "assistant", content: `文档解析失败：${error.message}` },
       ])
     }
   }, [handleSendMessage])
@@ -524,7 +529,7 @@ export default function Home() {
         <ChatArea
           messages={messages}
           onSendMessage={handleSendMessage}
-          onUploadImage={handleUploadExamImage}
+          onUploadDocuments={handleUploadExamDocuments}
           isLoading={isLoading && !isInterrupted}
         />
         {isInterrupted && (
