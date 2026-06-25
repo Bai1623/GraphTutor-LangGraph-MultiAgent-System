@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import zipfile
+from io import BytesIO
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -108,6 +110,59 @@ def test_build_query_prefers_question_structure():
     assert "函数零点" in query
     assert "我的补充问题：给出步骤" in query
     assert "识别内容" not in query
+
+
+def test_docx_local_fallback_extracts_paragraphs():
+    buffer = BytesIO()
+    document_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+      <w:body>
+        <w:p><w:r><w:t>第1题</w:t></w:r><w:r><w:t> 求函数零点</w:t></w:r></w:p>
+        <w:p><w:r><w:t>第2题 选择正确答案</w:t></w:r></w:p>
+      </w:body>
+    </w:document>"""
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("word/document.xml", document_xml)
+
+    text = parser._extract_docx_text(buffer.getvalue())
+
+    assert text == "第1题 求函数零点\n第2题 选择正确答案"
+
+
+def test_document_fallback_returns_local_parser():
+    files = [{
+        "filename": "notes.docx",
+        "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "kind": "docx",
+        "data": b"docx",
+    }]
+
+    with patch.object(parser, "_extract_docx_text", return_value="第1题 内容"):
+        payload, backend = parser._fallback_document_parse("docx", files)
+
+    assert payload["recognized_text"] == "第1题 内容"
+    assert backend == "local:docx"
+
+
+@pytest.mark.asyncio
+async def test_pdf_uses_local_fallback_without_mcp(monkeypatch):
+    monkeypatch.delenv("DOCUMENT_MCP_URL", raising=False)
+    monkeypatch.delenv("DOCUMENT_MCP_COMMAND", raising=False)
+    upload = UploadFile(
+        filename="exam.pdf",
+        file=_BytesFile(b"%PDF"),
+        headers={"content-type": "application/pdf"},
+    )
+
+    with (
+        patch.object(parser, "_extract_pdf_text", return_value="--- Page 1 ---\n第1题 内容"),
+        patch.object(parser, "_segment_with_mcp", return_value=None),
+    ):
+        result = await parser.parse_exam_uploads([upload], "讲解")
+
+    assert result.parser == "local:pymupdf"
+    assert "第1题" in result.recognized_text
+    assert "讲解" in result.query
 
 
 class _BytesFile:

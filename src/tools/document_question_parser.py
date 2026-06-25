@@ -6,9 +6,12 @@ import asyncio
 import base64
 import json
 import os
+import zipfile
 from dataclasses import asdict, dataclass, field
+from io import BytesIO
 from pathlib import Path
 from typing import Any
+from xml.etree import ElementTree
 
 from fastapi import HTTPException, UploadFile
 
@@ -88,9 +91,10 @@ async def parse_exam_uploads(
     try:
         payload, parser = await asyncio.to_thread(_parse_with_mcp, kind, prepared)
     except DocumentParseError as exc:
-        if kind != "image":
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
-        payload, parser = await _fallback_image_ocr(prepared)
+        if kind == "image":
+            payload, parser = await _fallback_image_ocr(prepared)
+        else:
+            payload, parser = await asyncio.to_thread(_fallback_document_parse, kind, prepared)
 
     questions = _normalize_questions(payload)
     recognized_text = _extract_recognized_text(payload, questions)
@@ -219,6 +223,66 @@ def _segment_with_mcp(recognized_text: str, files: list[dict[str, Any]]) -> Any:
         return _call_document_mcp(tool_name, arguments)
     except DocumentParseError:
         return None
+
+
+def _fallback_document_parse(kind: str, files: list[dict[str, Any]]) -> tuple[dict[str, Any], str]:
+    """Extract text locally when no document MCP is available."""
+    item = files[0]
+    try:
+        if kind == "pdf":
+            text = _extract_pdf_text(item["data"])
+            parser = "local:pymupdf"
+        elif kind == "docx":
+            text = _extract_docx_text(item["data"])
+            parser = "local:docx"
+        else:
+            raise DocumentParseError(f"Local fallback does not support {kind}.")
+    except DocumentParseError:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Local {kind.upper()} parsing failed: {exc}",
+        ) from exc
+
+    if not text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"No text was extracted from {item['filename']}. "
+                "For scanned documents, configure DOCUMENT_MCP_URL or "
+                "DOCUMENT_MCP_COMMAND with OCR-capable tools."
+            ),
+        )
+    return {"recognized_text": text}, parser
+
+
+def _extract_pdf_text(data: bytes) -> str:
+    import fitz
+
+    pages = []
+    with fitz.open(stream=data, filetype="pdf") as document:
+        for page_number, page in enumerate(document, 1):
+            text = page.get_text("text").strip()
+            if text:
+                pages.append(f"--- Page {page_number} ---\n{text}")
+    return "\n\n".join(pages)
+
+
+def _extract_docx_text(data: bytes) -> str:
+    namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    with zipfile.ZipFile(BytesIO(data)) as archive:
+        document_xml = archive.read("word/document.xml")
+    root = ElementTree.fromstring(document_xml)
+    paragraphs = []
+    for paragraph in root.findall(".//w:p", namespace):
+        text = "".join(
+            node.text or ""
+            for node in paragraph.findall(".//w:t", namespace)
+        ).strip()
+        if text:
+            paragraphs.append(text)
+    return "\n".join(paragraphs)
 
 
 def _call_document_mcp(tool_name: str, arguments: dict[str, Any]) -> Any:

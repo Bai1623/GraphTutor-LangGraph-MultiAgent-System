@@ -206,7 +206,8 @@ cp .env.example .env
 # POLICY_MCP_TOOL=policy_search
 # POLICY_MCP_TIMEOUT_SECONDS=10
 
-# 可选：试卷/讲义解析 MCP。PDF、DOCX 依赖 MCP；图片在 MCP 失败时回退现有视觉 OCR。
+# 可选：试卷/讲义解析 MCP。未配置时 PDF/DOCX 回退本地文本提取，
+# 图片回退现有视觉 OCR；扫描版 PDF 建议配置支持 OCR 的 MCP。
 # DOCUMENT_MCP_URL=http://127.0.0.1:8766/mcp
 # DOCUMENT_MCP_COMMAND="python path/to/document_mcp_server.py"
 # PDF_PARSE_MCP_TOOL=pdf_parse
