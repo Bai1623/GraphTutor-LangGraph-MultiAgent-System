@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Send, Bot, User, FileUp, SlidersHorizontal, Mic, Download, ThumbsUp, ThumbsDown, Loader2 } from "lucide-react"
+import { Send, Bot, User, FileUp, FileText, X, SlidersHorizontal, Mic, Download, ThumbsUp, ThumbsDown, Loader2 } from "lucide-react"
 import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { Button } from "@/components/ui/button"
@@ -16,14 +16,15 @@ export interface Message {
 
 interface ChatAreaProps {
   messages: Message[]
-  onSendMessage: (content: string) => void
-  onUploadDocuments?: (files: File[], question: string) => Promise<void>
+  onSendMessage: (content: string) => void | Promise<void>
+  onUploadDocuments?: (files: File[], question: string) => Promise<boolean>
   isLoading?: boolean
 }
 
 export function ChatArea({ messages, onSendMessage, onUploadDocuments, isLoading }: ChatAreaProps) {
   const [showExportTip, setShowExportTip] = useState(false)
   const [input, setInput] = useState("")
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [isUploadingDocument, setIsUploadingDocument] = useState(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -35,26 +36,39 @@ export function ChatArea({ messages, onSendMessage, onUploadDocuments, isLoading
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (input.trim() && !isLoading) {
-      onSendMessage(input.trim())
+    const question = input.trim()
+    if (!question || isLoading || isUploadingDocument) return
+
+    if (pendingFiles.length && onUploadDocuments) {
+      setIsUploadingDocument(true)
+      try {
+        const sent = await onUploadDocuments(pendingFiles, question)
+        if (sent) {
+          setPendingFiles([])
+          setInput("")
+        }
+      } finally {
+        setIsUploadingDocument(false)
+      }
+    } else {
+      await onSendMessage(question)
       setInput("")
     }
   }
 
-  const handleDocumentChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDocumentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     e.target.value = ""
     if (!files.length || !onUploadDocuments || isLoading || isUploadingDocument) return
-
-    setIsUploadingDocument(true)
-    try {
-      await onUploadDocuments(files, input.trim())
-      setInput("")
-    } finally {
-      setIsUploadingDocument(false)
-    }
+    setPendingFiles((current) => {
+      const existing = new Set(current.map((file) => `${file.name}:${file.size}:${file.lastModified}`))
+      return [
+        ...current,
+        ...files.filter((file) => !existing.has(`${file.name}:${file.size}:${file.lastModified}`)),
+      ]
+    })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -177,12 +191,33 @@ export function ChatArea({ messages, onSendMessage, onUploadDocuments, isLoading
           <div className="bg-[#F5F3E8] rounded-3xl overflow-hidden border border-[#E8E5D8]">
             {/* Text Area at Top */}
             <div className="px-4 pt-4 pb-2">
+              {pendingFiles.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {pendingFiles.map((file, index) => (
+                    <div
+                      key={`${file.name}:${file.size}:${file.lastModified}`}
+                      className="flex h-8 max-w-full items-center gap-2 rounded-md border border-[#D8D4C5] bg-white px-2 text-xs text-foreground"
+                    >
+                      <FileText className="h-3.5 w-3.5 shrink-0 text-[#3D5A40]" />
+                      <span className="max-w-48 truncate">{file.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setPendingFiles((files) => files.filter((_, i) => i !== index))}
+                        className="text-muted-foreground hover:text-foreground"
+                        title={`移除 ${file.name}`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <textarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="输入你的问题..."
+                placeholder={pendingFiles.length ? "针对附件输入你的问题..." : "输入你的问题..."}
                 rows={2}
                 className={cn(
                   "w-full resize-none bg-transparent",

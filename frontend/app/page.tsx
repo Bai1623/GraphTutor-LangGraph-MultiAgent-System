@@ -290,13 +290,13 @@ export default function Home() {
     return response.body
   }, [])
 
-  const handleSendMessage = useCallback(async (content: string) => {
+  const handleSendMessage = useCallback(async (content: string, displayContent = content) => {
     let chatId = activeChatIdRef.current
     if (!chatId) {
       chatId = crypto.randomUUID()
       const newChat: ChatSession = {
         id: chatId,
-        title: content.slice(0, 30) + (content.length > 30 ? "..." : ""),
+        title: displayContent.slice(0, 30) + (displayContent.length > 30 ? "..." : ""),
         threadId: null,
         messages: [],
         updatedAt: new Date().toISOString(),
@@ -309,7 +309,7 @@ export default function Home() {
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content,
+      content: displayContent,
     }
 
     setMessages((prev) => [...prev, userMessage])
@@ -319,7 +319,7 @@ export default function Home() {
     setInterruptDraft("")
     setLogs((prev) => [
       ...prev,
-      { type: "info" as const, message: `[INFO] User query: ${content.slice(0, 60)}`, ts: timestamp() },
+      { type: "info" as const, message: `[INFO] User query: ${displayContent.slice(0, 60)}`, ts: timestamp() },
     ])
 
     setIsLoading(true)
@@ -405,7 +405,11 @@ export default function Home() {
           ts: timestamp(),
         },
       ])
-      await handleSendMessage(data.query)
+      const attachmentLabel = files.length === 1
+        ? `附件：${files[0].name}`
+        : `附件：${files.length} 个文件（${filenames}）`
+      await handleSendMessage(data.query, `${question}\n\n${attachmentLabel}`)
+      return true
     } catch (error: any) {
       setLogs((prev) => [
         ...prev,
@@ -415,6 +419,7 @@ export default function Home() {
         ...prev,
         { id: Date.now().toString(), role: "assistant", content: `文档解析失败：${error.message}` },
       ])
+      return false
     }
   }, [handleSendMessage])
 

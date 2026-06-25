@@ -6,6 +6,9 @@ from pathlib import Path
 PAGE = (
     Path(__file__).resolve().parent.parent / "frontend" / "app" / "page.tsx"
 ).read_text(encoding="utf-8")
+CHAT_AREA = (
+    Path(__file__).resolve().parent.parent / "frontend" / "components" / "chat-area.tsx"
+).read_text(encoding="utf-8")
 
 
 def test_stream_request_reuses_existing_thread_id():
@@ -34,3 +37,19 @@ def test_selecting_conversation_restores_messages_and_thread_id():
 
     assert "setMessages(chat.messages)" in select_handler
     assert "threadIdRef.current = chat.threadId" in select_handler
+
+
+def test_document_selection_stages_files_until_message_submit():
+    change_handler = CHAT_AREA.split(
+        "const handleDocumentChange", maxsplit=1
+    )[1].split("const handleKeyDown", maxsplit=1)[0]
+
+    assert "setPendingFiles" in change_handler
+    assert "onUploadDocuments(" not in change_handler
+    assert "await onUploadDocuments(pendingFiles, question)" in CHAT_AREA
+
+
+def test_document_query_has_separate_user_facing_content():
+    assert "displayContent = content" in PAGE
+    assert "content: displayContent" in PAGE
+    assert "handleSendMessage(data.query, `${question}" in PAGE
