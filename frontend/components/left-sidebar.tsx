@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronLeft, ChevronRight, MessageSquarePlus, MessageSquare, Settings } from "lucide-react"
+import { ChevronLeft, ChevronRight, LogOut, MessageSquarePlus, MessageSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
@@ -16,10 +16,11 @@ interface LeftSidebarProps {
   chatHistory: ChatHistoryItem[]
   onNewChat: () => void
   onSelectChat: (id: string) => void
+  onLogout: () => void
   selectedChatId?: string
 }
 
-export function LeftSidebar({ chatHistory, onNewChat, onSelectChat, selectedChatId }: LeftSidebarProps) {
+export function LeftSidebar({ chatHistory, onNewChat, onSelectChat, onLogout, selectedChatId }: LeftSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
 
   return (
@@ -167,14 +168,15 @@ export function LeftSidebar({ chatHistory, onNewChat, onSelectChat, selectedChat
             </ScrollArea>
           </div>
 
-          {/* Settings & Help */}
+          {/* Session */}
           <div className="p-4 border-t border-border">
             <Button
               variant="ghost"
+              onClick={onLogout}
               className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
             >
-              <Settings className="h-4 w-4" />
-              设置与帮助
+              <LogOut className="h-4 w-4" />
+              退出登录
             </Button>
           </div>
         </>

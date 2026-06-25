@@ -350,6 +350,7 @@ function MessageBubble({ message }: { message: Message }) {
     const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
     fetch(`${apiBase}/feedback`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message_id: message.id, rating: type, query_preview: message.content.slice(0, 200) }),
     }).catch(() => {}) // 静默失败，不打扰用户

@@ -5,6 +5,13 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class LoginRequest(BaseModel):
+    """Credentials for the private single-user deployment."""
+
+    username: str = Field(max_length=128)
+    password: str = Field(max_length=256)
+
+
 class ChatRequest(BaseModel):
     """Incoming chat request from the frontend."""
 

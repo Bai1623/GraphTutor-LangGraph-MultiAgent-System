@@ -199,6 +199,14 @@ python -m uv sync --extra dev --locked
 cp .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY 和 SILICONFLOW_API_KEY
 
+# 私有访问登录。默认账号 admin、密码 123456。
+# 暴露到公网前必须修改 AUTH_PASSWORD，并生成一个长随机 AUTH_SECRET。
+# AUTH_USERNAME=admin
+# AUTH_PASSWORD=123456
+# AUTH_SECRET=replace_with_a_long_random_string
+# AUTH_SESSION_HOURS=12
+# HTTPS 部署时设置 AUTH_COOKIE_SECURE=true
+
 # 可选：官方政策 / 招生数据 MCP。优先使用 MCP，失败时自动回退到通用 Web search。
 # 二选一配置即可：
 # POLICY_MCP_URL=http://127.0.0.1:8765/mcp

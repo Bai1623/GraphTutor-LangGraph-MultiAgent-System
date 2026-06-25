@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import AsyncGenerator
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, File, Form, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
@@ -23,10 +23,19 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from src.database.checkpointer import get_db_uri, make_thread_config
 from src.graph.builder import get_compiled_graph
+from src.auth import (
+    COOKIE_NAME,
+    authenticated_username,
+    configured_username,
+    create_session_token,
+    credentials_match,
+    session_max_age_seconds,
+)
 from src.schemas import (
     ChatRequest,
     DocumentParseResponse,
     FeedbackRequest,
+    LoginRequest,
     OcrResponse,
     ResumeRequest,
 )
@@ -101,6 +110,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+PUBLIC_PATHS = {
+    "/auth/login",
+    "/auth/logout",
+    "/health",
+    "/ping",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+}
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    """Require a valid signed session cookie for business endpoints."""
+    if request.method == "OPTIONS" or request.url.path in PUBLIC_PATHS:
+        return await call_next(request)
+    username = authenticated_username(request)
+    if not username:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "请先登录后使用。"},
+        )
+    request.state.username = username
+    return await call_next(request)
+
+
 # ── API 限流中间件（Token Bucket） ──
 if os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false":
     from src.middleware.rate_limit import create_rate_limit_middleware
@@ -136,6 +171,39 @@ GRAPH_NODES = {
     "emotional_response",
     "handle_unknown",
 }
+
+
+@app.post("/auth/login")
+async def login_endpoint(credentials: LoginRequest, response: Response):
+    if not credentials_match(credentials.username, credentials.password):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "账号或密码错误。"},
+        )
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=create_session_token(credentials.username),
+        httponly=True,
+        samesite="lax",
+        secure=os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true",
+        max_age=session_max_age_seconds(),
+        path="/",
+    )
+    return {"authenticated": True, "username": credentials.username}
+
+
+@app.get("/auth/me")
+async def auth_me_endpoint(request: Request):
+    return {
+        "authenticated": True,
+        "username": getattr(request.state, "username", configured_username()),
+    }
+
+
+@app.post("/auth/logout")
+async def logout_endpoint(response: Response):
+    response.delete_cookie(COOKIE_NAME, path="/")
+    return {"authenticated": False}
 
 
 async def _stream_graph_events(

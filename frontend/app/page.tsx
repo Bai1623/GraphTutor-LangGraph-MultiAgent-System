@@ -5,6 +5,7 @@ import { LeftSidebar } from "@/components/left-sidebar"
 import { RightPanel, NodeEvent, LogEntry } from "@/components/right-panel"
 import { ChatArea, Message } from "@/components/chat-area"
 import { PlanReview } from "@/components/plan-review"
+import { LoginScreen } from "@/components/login-screen"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 const CHAT_STORAGE_KEY = "gaokao_tutor_conversations"
@@ -23,15 +24,8 @@ function timestamp(): string {
   return new Date().toLocaleTimeString("en-GB", { hour12: false })
 }
 
-function getAuthHeaders(): Record<string, string> {
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("demo_access_token")
-    if (token) return { "X-Access-Token": token }
-  }
-  return {}
-}
-
 export default function Home() {
+  const [authState, setAuthState] = useState<"checking" | "authenticated" | "anonymous">("checking")
   const [chatHistory, setChatHistory] = useState(initialChatHistory)
   const [selectedChatId, setSelectedChatId] = useState<string | undefined>()
   const [messages, setMessages] = useState<Message[]>([])
@@ -51,6 +45,12 @@ export default function Home() {
   const userIdRef = useRef<string | null>(null)
   const activeChatIdRef = useRef<string | null>(null)
   const assistantMessageIdRef = useRef<string>("")
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/auth/me`, { credentials: "include" })
+      .then((response) => setAuthState(response.ok ? "authenticated" : "anonymous"))
+      .catch(() => setAuthState("anonymous"))
+  }, [])
 
   useEffect(() => {
     try {
@@ -257,7 +257,7 @@ export default function Home() {
 
   /** Fetch helper with shared HTTP error handling. Returns response body or null on handled error. */
   const fetchWithErrorHandling = useCallback(async (url: string, init: RequestInit): Promise<ReadableStream<Uint8Array> | null> => {
-    const response = await fetch(url, init)
+    const response = await fetch(url, { ...init, credentials: "include" })
 
     if (response.status === 429) {
       setMessages((prev) => [
@@ -272,15 +272,7 @@ export default function Home() {
     }
 
     if (response.status === 401) {
-      setMessages((prev) => [
-        ...prev,
-        { id: (Date.now() + 1).toString(), role: "assistant", content: "🔑 访问未授权，请检查访问令牌是否正确。" },
-      ])
-      setLogs((prev) => [
-        ...prev,
-        { type: "error", message: "[ERROR] 401 Unauthorized — invalid or missing access token", ts: timestamp() },
-      ])
-      if (typeof window !== "undefined") localStorage.removeItem("demo_access_token")
+      setAuthState("anonymous")
       return null
     }
 
@@ -333,7 +325,7 @@ export default function Home() {
       }
       const body = await fetchWithErrorHandling(`${API_BASE_URL}/stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: content,
           thread_id: threadIdRef.current,
@@ -381,11 +373,15 @@ export default function Home() {
     try {
       const response = await fetch(`${API_BASE_URL}/documents/parse`, {
         method: "POST",
-        headers: { ...getAuthHeaders() },
+        credentials: "include",
         body: formData,
       })
 
       if (!response.ok) {
+        if (response.status === 401) {
+          setAuthState("anonymous")
+          return false
+        }
         let detail = `${response.status} ${response.statusText}`
         try {
           const payload = await response.json()
@@ -442,7 +438,7 @@ export default function Home() {
     try {
       const body = await fetchWithErrorHandling(`${API_BASE_URL}/resume`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ thread_id: threadId, edited_plan: editedPlan }),
       })
 
@@ -487,7 +483,7 @@ export default function Home() {
     try {
       const body = await fetchWithErrorHandling(`${API_BASE_URL}/resume`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ thread_id: threadId, feedback }),
       })
 
@@ -522,12 +518,48 @@ export default function Home() {
     }
   }, [fetchWithErrorHandling, consumeSSEStream])
 
+  const handleLogin = useCallback(async (username: string, password: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        return payload.detail || "登录失败，请检查账号和密码。"
+      }
+      setAuthState("authenticated")
+      return null
+    } catch {
+      return "无法连接后端服务。"
+    }
+  }, [])
+
+  const handleLogout = useCallback(async () => {
+    await fetch(`${API_BASE_URL}/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    }).catch(() => undefined)
+    setAuthState("anonymous")
+  }, [])
+
+  if (authState === "checking") {
+    return <div className="flex h-screen items-center justify-center text-sm text-muted-foreground">正在验证登录状态...</div>
+  }
+
+  if (authState === "anonymous") {
+    return <LoginScreen onLogin={handleLogin} />
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
-      <LeftSidebar
+        <LeftSidebar
         chatHistory={chatHistory}
         onNewChat={handleNewChat}
-        onSelectChat={handleSelectChat}
+          onSelectChat={handleSelectChat}
+          onLogout={handleLogout}
         selectedChatId={selectedChatId}
       />
       <div className="flex-1 flex flex-col h-full">
