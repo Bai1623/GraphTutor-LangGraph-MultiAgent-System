@@ -25,6 +25,7 @@ CHECKED_PATHS = [
     PROJECT_ROOT / "eval" / "golden",
     PROJECT_ROOT / "scripts",
     PROJECT_ROOT / "config" / "prompts",
+    PROJECT_ROOT / "src" / "memory",
 ]
 
 CHECKED_GLOBS = [

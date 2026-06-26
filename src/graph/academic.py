@@ -29,6 +29,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import os
 
@@ -38,6 +39,7 @@ from pydantic import BaseModel, Field
 from src.config import get_setting, load_prompt
 from src.graph.llm import async_invoke_with_fallback, get_fallback_llm, get_node_llm
 from src.graph.state import CONTEXT_CLEAR, TutorState
+from src.memory.artifacts import compact_with_artifact
 from src.memory.context_builder import build_memory_context
 from src.rag.retriever import retrieve
 from src.tools.agent_tools import search_knowledge_base, search_web
@@ -195,9 +197,18 @@ async def rag_retrieve(state: TutorState) -> dict:
         if result.get("docs"):
             span.set_attribute("rag.top_score", result["docs"][0].get("score", 0))
 
-    docs = result["docs"]
+    docs = [
+        compact_with_artifact(
+            {"type": "rag", **doc},
+            kind="rag_retrieval_doc",
+            text_key="content",
+            preview_chars=900,
+            metadata={"query": query, "subject": subj},
+        )
+        for doc in result["docs"]
+    ]
     # 标记来源类型，方便后续 generate_answer 区分 RAG 和 Web 结果
-    return {"context": [{"type": "rag", **doc} for doc in docs]}
+    return {"context": docs}
 
 
 # ============================================================================
@@ -241,8 +252,18 @@ async def web_search(state: TutorState) -> dict:
             span.set_attribute("search.result_count", 0)
             span.set_attribute("search.timed_out", False)
 
+    compact_results = [
+        compact_with_artifact(
+            {"type": "web", **result},
+            kind="web_search_result",
+            text_key="content",
+            preview_chars=700,
+            metadata={"query": query},
+        )
+        for result in search_results
+    ]
     # 同样标记来源类型
-    return {"context": [{"type": "web", **r} for r in search_results]}
+    return {"context": compact_results}
 
 
 # ============================================================================
@@ -366,9 +387,11 @@ def _format_retrieved(docs: list[dict]) -> str:
         return "无相关参考资料。"
     parts = []
     for i, d in enumerate(docs, 1):
+        artifact_id = d.get("artifact_id", "")
+        artifact_line = f"\nArtifact: {artifact_id}" if artifact_id else ""
         parts.append(
             f"[{i}] 来源：{d.get('source', '未知')}"
-            f"（相关度：{d.get('score', 'N/A')}）\n{d.get('content', '')}"
+            f"（相关度：{d.get('score', 'N/A')}）\n{d.get('content', '')}{artifact_line}"
         )
     return "\n\n".join(parts)
 
@@ -382,8 +405,10 @@ def _format_search(results: list[dict]) -> str:
         return "无网络搜索结果。"
     parts = []
     for i, r in enumerate(results, 1):
+        artifact_id = r.get("artifact_id", "")
+        artifact_line = f"\nArtifact: {artifact_id}" if artifact_id else ""
         parts.append(
-            f"[{i}] {r.get('title', '无标题')} ({r.get('url', '')})\n{r.get('content', '')}"
+            f"[{i}] {r.get('title', '无标题')} ({r.get('url', '')})\n{r.get('content', '')}{artifact_line}"
         )
     return "\n\n".join(parts)
 
@@ -396,6 +421,18 @@ def _format_search(results: list[dict]) -> str:
 _TOOLS = [search_knowledge_base, search_web]
 _TOOL_BY_NAME = {t.name: t for t in _TOOLS}
 _MAX_TOOL_ROUNDS = get_setting("academic.max_tool_rounds", 3)
+
+
+def _bind_tools_or_self(llm):
+    """Bind tools when supported, while keeping lightweight test doubles usable."""
+    bound = llm.bind_tools(_TOOLS)
+    ainvoke = getattr(bound, "ainvoke", None)
+    if callable(ainvoke) and inspect.iscoroutinefunction(ainvoke):
+        return bound
+    original_ainvoke = getattr(llm, "ainvoke", None)
+    if callable(original_ainvoke) and inspect.iscoroutinefunction(original_ainvoke):
+        return llm
+    return bound
 
 
 async def _execute_tool(tool_call: dict) -> str:
@@ -450,9 +487,9 @@ async def generate_answer(state: TutorState) -> dict:
     web_results = [c for c in context if c.get("type") == "web"]
 
     # —— 绑定工具到主/副模型 ——
-    primary_with_tools = llm.bind_tools(_TOOLS)
+    primary_with_tools = _bind_tools_or_self(llm)
     fallback_llm = get_fallback_llm(temperature=temperature)
-    fallback_with_tools = fallback_llm.bind_tools(_TOOLS)
+    fallback_with_tools = _bind_tools_or_self(fallback_llm)
 
     # —— 构建初始消息（初始上下文 + 用户问题）——
     user_prompt = load_prompt("academic_answer").format(

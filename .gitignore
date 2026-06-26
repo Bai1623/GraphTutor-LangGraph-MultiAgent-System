@@ -29,6 +29,7 @@ learning_notes/
 # logs
 logs/
 artifacts/
+data/context_artifacts/
 .backend*.log
 .frontend*.log
 

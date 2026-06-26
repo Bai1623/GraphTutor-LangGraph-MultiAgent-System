@@ -95,10 +95,12 @@ def format_policy_results(results: list[dict[str, Any]]) -> str:
         url = result.get("url") or ""
         content = result.get("content") or ""
         confidence = result.get("confidence") or "official"
+        artifact_id = result.get("artifact_id") or ""
+        artifact_line = f"\nArtifact: {artifact_id}" if artifact_id else ""
         parts.append(
             f"[{i}] {source} | {province} | {topic} | {published} | {confidence}\n"
             f"URL: {url}\n"
-            f"{content}"
+            f"{content}{artifact_line}"
         )
     return "\n\n".join(parts)
 

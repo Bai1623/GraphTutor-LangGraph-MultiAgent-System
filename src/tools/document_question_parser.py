@@ -15,6 +15,7 @@ from xml.etree import ElementTree
 
 from fastapi import HTTPException, UploadFile
 
+from src.memory.artifacts import artifact_ref_dict, get_context_artifact_store, make_preview
 from src.tools.ocr_tool import perform_exam_ocr_bytes
 from src.tools.policy_search import (
     PolicySearchError,
@@ -66,6 +67,9 @@ class DocumentParseResult:
     filenames: list[str]
     parser: str
     segmenter_used: bool
+    artifact_id: str
+    preview: str
+    artifacts: list[dict[str, Any]] = field(default_factory=list)
 
 
 class DocumentParseError(RuntimeError):
@@ -104,14 +108,38 @@ async def parse_exam_uploads(
         questions = _normalize_questions(segmented)
         segmenter_used = bool(questions)
 
-    query = build_document_question_query(questions, recognized_text, question)
+    filenames = [item["filename"] for item in prepared]
+    artifact_payload = {
+        "questions": [item.to_dict() for item in questions],
+        "recognized_text": recognized_text,
+        "filenames": filenames,
+        "parser": parser,
+        "segmenter_used": segmenter_used,
+    }
+    preview = _document_preview(questions, recognized_text)
+    artifact_ref = get_context_artifact_store().put(
+        kind="document_parse",
+        payload=artifact_payload,
+        preview_source=preview,
+        metadata={"filenames": filenames, "parser": parser},
+        max_preview_chars=1200,
+    )
+    query = build_document_question_query(
+        questions,
+        recognized_text,
+        question,
+        artifact_id=artifact_ref.artifact_id,
+    )
     return DocumentParseResult(
         questions=questions,
-        recognized_text=recognized_text,
+        recognized_text=make_preview(recognized_text, max_chars=1200),
         query=query,
-        filenames=[item["filename"] for item in prepared],
+        filenames=filenames,
         parser=parser,
         segmenter_used=segmenter_used,
+        artifact_id=artifact_ref.artifact_id,
+        preview=artifact_ref.preview,
+        artifacts=[artifact_ref_dict(artifact_ref)],
     )
 
 
@@ -119,12 +147,15 @@ def build_document_question_query(
     questions: list[ParsedQuestion],
     recognized_text: str,
     user_question: str | None = None,
+    artifact_id: str | None = None,
 ) -> str:
     """Build a downstream tutoring query from structured exam content."""
     parts = [
-        "我上传了试卷或学习材料，系统已将内容解析为题目级结构。",
-        "请结合题目内容检索相关知识点、题型方法和相似材料，再按我的要求作答。",
+        "我上传了一份试卷或学习材料，系统已解析并保存为可恢复的上下文 artifact。",
+        "请结合下方预览、题目结构和我的补充问题作答；不要把 artifact 预览当成完整原文。",
     ]
+    if artifact_id:
+        parts.append(f"文档 artifact_id：{artifact_id}")
     if (user_question or "").strip():
         parts.append(f"我的补充问题：{user_question.strip()}")
     if questions:
@@ -132,17 +163,28 @@ def build_document_question_query(
             {
                 "number": item.number,
                 "subject": item.subject,
-                "stem": item.stem,
+                "stem": make_preview(item.stem, max_chars=500),
                 "options": item.options,
                 "figures": item.figures,
                 "detected_knowledge_points": item.detected_knowledge_points,
             }
             for item in questions
         ]
-        parts.append("题目结构：\n" + json.dumps(compact, ensure_ascii=False, indent=2))
+        parts.append("题目结构预览：\n" + json.dumps(compact, ensure_ascii=False, indent=2))
     elif recognized_text.strip():
-        parts.append("识别内容：\n" + recognized_text.strip())
+        parts.append("识别内容预览：\n" + make_preview(recognized_text, max_chars=1500))
     return "\n\n".join(parts)
+
+
+def _document_preview(questions: list[ParsedQuestion], recognized_text: str) -> str:
+    if questions:
+        lines = []
+        for item in questions[:12]:
+            knowledge = "、".join(item.detected_knowledge_points[:5])
+            suffix = f" | 知识点：{knowledge}" if knowledge else ""
+            lines.append(f"{item.number}. {make_preview(item.stem, max_chars=180)}{suffix}")
+        return "\n".join(lines)
+    return make_preview(recognized_text, max_chars=1200)
 
 
 async def _read_uploads(uploads: list[UploadFile]) -> list[dict[str, Any]]:

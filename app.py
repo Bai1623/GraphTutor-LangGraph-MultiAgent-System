@@ -509,6 +509,9 @@ async def document_parse_endpoint(
         filenames=result.filenames,
         parser=result.parser,
         segmenter_used=result.segmenter_used,
+        artifact_id=result.artifact_id,
+        preview=result.preview,
+        artifacts=result.artifacts,
     )
 
 

@@ -37,6 +37,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from src.config import get_setting, load_prompt
 from src.graph.llm import async_invoke_with_fallback, get_fallback_llm, get_node_llm
 from src.graph.state import TutorState
+from src.memory.artifacts import compact_with_artifact
 from src.rag.retriever import retrieve
 from src.tools.policy_search import format_policy_results, search_official_policy
 from src.tools.search_tool import search as web_search_fn
@@ -87,8 +88,18 @@ async def search_policy(state: TutorState) -> dict:
                 span.set_attribute("search.policy_source", policy_source)
                 span.set_attribute("search.result_count", len(search_results))
                 span.set_attribute("search.timed_out", False)
+                compact_results = [
+                    compact_with_artifact(
+                        result,
+                        kind="official_policy_result",
+                        text_key="content",
+                        preview_chars=900,
+                        metadata={"query": query, "policy_source": policy_source},
+                    )
+                    for result in search_results
+                ]
                 return {
-                    "search_results": search_results,
+                    "search_results": compact_results,
                     "policy_source": policy_source,
                     "policy_query": query,
                 }
@@ -120,8 +131,19 @@ async def search_policy(state: TutorState) -> dict:
             span.set_attribute("search.policy_source", policy_source)
             span.set_attribute("search.timed_out", False)
 
+    compact_results = [
+        compact_with_artifact(
+            result,
+            kind="policy_web_fallback_result",
+            text_key="content",
+            preview_chars=700,
+            metadata={"query": query, "policy_source": policy_source},
+        )
+        for result in search_results
+    ]
+
     return {
-        "search_results": search_results,
+        "search_results": compact_results,
         "policy_source": policy_source,
         "policy_query": query,
     }

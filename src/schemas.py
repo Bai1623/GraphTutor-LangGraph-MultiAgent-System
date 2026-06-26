@@ -68,3 +68,6 @@ class DocumentParseResponse(BaseModel):
     filenames: list[str]
     parser: str
     segmenter_used: bool
+    artifact_id: str = ""
+    preview: str = ""
+    artifacts: list[dict] = Field(default_factory=list)
