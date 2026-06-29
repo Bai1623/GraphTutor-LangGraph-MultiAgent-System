@@ -85,13 +85,19 @@ state/prompt 中只保留：
 当前摘要结构保留：
 
 - `task`
+- `gaokao_state`
+- `artifact_refs`
+- `current_documents`
+- `current_questions`
 - `student_state`
 - `constraints`
 - `decisions`
 - `knowledge_progress`
 - `open_loops`
 
-后续建议把 `artifact_refs`、`current_documents`、`current_questions` 纳入 `SessionEpisode`。
+`gaokao_state` 专门保存高考场景中的年级、省份、选科/方向、目标分、目标院校、科目目标、薄弱点、近期成绩和学习偏好。
+
+`artifact_refs`、`current_documents`、`current_questions` 用来保证压缩后仍能找回上传 PDF、OCR、政策搜索、RAG 文档等完整内容。摘要 prompt 明确要求不得改写 `artifact_id`。
 
 ### 6. 长期记忆
 
@@ -114,10 +120,43 @@ state/prompt 中只保留：
 - `绱`
 - `�`
 
+## Compression Harness
+
+新增 `src/memory/compression_harness.py` 和 `scripts/run_compression_harness.py`，用于离线评估压缩质量。
+
+默认 golden suite：
+
+```text
+eval/golden/compression.yaml
+```
+
+运行：
+
+```bash
+python -m uv run python scripts/run_compression_harness.py --output artifacts/eval
+```
+
+默认模式是 `offline_static_episode`，不调用真实 LLM。每个 case 提供 `expected_episode`，harness 用它构造压缩后的上下文，然后计算：
+
+- `token_reduction`：压缩前后 token 降幅。
+- `constraint_retention`：用户硬约束保留率。
+- `answer_consistency`：答案关键项在压缩前后是否仍可见。
+- `artifact_recoverability`：摘要中的 artifact id 是否存在且能从 artifact store 恢复。
+
+如果后续要评估真实摘要器，可使用：
+
+```bash
+python -m uv run python scripts/run_compression_harness.py --use-llm --output artifacts/eval
+```
+
+当前 golden case 覆盖：
+
+- 上传试卷后继续追问知识点。
+- 志愿规划中保留官方政策 artifact 和预算/公办约束。
+
 ## 后续改造建议
 
 1. 增加 artifact 恢复工具：按 `artifact_id`、题号、页码恢复完整内容。
-2. 把 `SessionEpisode` 扩展为高考场景 schema，显式保存 `artifact_refs`。
-3. 增加按节点的读时投影：`build_node_context(state, node_name)`。
-4. 给压缩机制增加 harness：token 降幅、约束保留率、artifact 可恢复率、回答一致性。
-5. 对 Agent 工具循环结果也接入 `ContextArtifactStore`，避免 ToolMessage 撑爆上下文。
+2. 增加按节点的读时投影：`build_node_context(state, node_name)`。
+3. 对 Agent 工具循环结果也接入 `ContextArtifactStore`，避免 ToolMessage 撑爆上下文。
+4. 扩展 compression harness 的 live LLM 模式，引入真实回答对比或 judge 评分。

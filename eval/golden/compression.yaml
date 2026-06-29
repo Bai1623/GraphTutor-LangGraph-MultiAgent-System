@@ -1,0 +1,175 @@
+suite: context_compression
+description: Conversation compression should keep constraints, Gaokao learning state, and recoverable artifact refs.
+thresholds:
+  token_reduction: 0.20
+  constraint_retention: 1.0
+  answer_consistency: 0.85
+  artifact_recoverability: 1.0
+
+cases:
+  - id: uploaded_exam_followup
+    artifacts:
+      - artifact_id: ctx_compression_exam_math_001
+        kind: document_parse
+        metadata:
+          filename: exam.pdf
+        payload:
+          questions:
+            - number: "17"
+              subject: math
+              stem: "已知函数 f(x)=x^3-3ax，讨论零点个数。"
+              detected_knowledge_points: ["导数", "函数零点", "单调性"]
+          recognized_text: "第17题 已知函数 f(x)=x^3-3ax，讨论零点个数。"
+    messages:
+      - id: h0
+        role: human
+        content: "我是广东高三物化生，数学目标120分，导数和函数零点很弱。以后讲题要先给思路，再给步骤。之前我做了很多导数题，常见问题是不会判断定义域、不会用导数表分析单调性、看到参数 a 就慌。老师让我每天做两道压轴小题，但我经常只抄答案，没有复盘错因。最近几次练习里，我对函数零点、极值点、切线方程混在一起的题很容易乱。旧对话记录：我反复问过定义域、导数符号表、极值和零点关系、参数分类讨论、端点取值、图像草图、切线方程、恒成立问题、分离参数、换元法、分类讨论边界、错题复盘格式、每天练习安排、考试时间分配、选择题压轴跳题策略、函数图像草图训练。旧对话记录重复：定义域、导数符号表、极值和零点关系、参数分类讨论、端点取值、图像草图、切线方程、恒成立问题、分离参数、换元法、分类讨论边界、错题复盘格式、每天练习安排、考试时间分配、选择题压轴跳题策略、函数图像草图训练。旧对话记录重复二：定义域、导数符号表、极值和零点关系、参数分类讨论、端点取值、图像草图、切线方程、恒成立问题、分离参数、换元法、分类讨论边界、错题复盘格式、每天练习安排、考试时间分配、选择题压轴跳题策略、函数图像草图训练。"
+      - id: a0
+        role: assistant
+        content: "已记录：广东高三，物化生，数学目标120分，薄弱点是导数和函数零点，讲题偏好是先思路后步骤。旧确认记录：这些画像信息后续不需要重复追问，只需要在压缩摘要中保留。"
+      - id: h1
+        role: human
+        content: "我上传了 exam.pdf，系统解析后的 artifact_id 是 ctx_compression_exam_math_001，第17题是导数和函数零点。请先判断知识点。"
+      - id: a1
+        role: assistant
+        content: "第17题涉及导数、函数零点、单调性，需要用导数判断函数图像变化，再讨论零点个数。先不要急着代数计算，应先看定义域，再求导，再用导数符号表分析单调区间，最后结合端点和极值讨论零点。你当前的主要任务不是背答案，而是把导数工具和零点图像关系对应起来。旧讲解细节：第一步读题，第二步圈出参数，第三步写定义域，第四步求导，第五步列导数符号表，第六步找极值，第七步比较端点和极值，第八步讨论零点个数，第九步回到题目要求，第十步复盘错因。旧讲解细节重复：第一步读题，第二步圈出参数，第三步写定义域，第四步求导，第五步列导数符号表，第六步找极值，第七步比较端点和极值，第八步讨论零点个数，第九步回到题目要求，第十步复盘错因。旧讲解细节重复二：读题、圈参数、写定义域、求导、列导数符号表、找极值、比较端点和极值、讨论零点个数、回到题目要求、复盘错因。旧讲解细节重复三：读题、圈参数、写定义域、求导、列导数符号表、找极值、比较端点和极值、讨论零点个数、回到题目要求、复盘错因。"
+      - id: h2
+        role: human
+        content: "那这个文件的知识点是什么？不要直接跳到答案。"
+    recent_message_count: 1
+    expected_constraints:
+      - "广东"
+      - "高三"
+      - "物化生"
+      - "数学目标120分"
+      - "先给思路，再给步骤"
+    answer_terms:
+      - "导数"
+      - "函数零点"
+      - "单调性"
+      - "第17题"
+    expected_artifact_ids:
+      - ctx_compression_exam_math_001
+    expected_episode:
+      task:
+        intent: academic
+        subject: math
+        topic: "导数与函数零点"
+        status: active
+      gaokao_state:
+        grade: "高三"
+        province: "广东"
+        exam_track: "物化生"
+        target_score: "数学120分"
+        weak_points:
+          - text: "导数和函数零点很弱"
+            source_message_ids: ["h0"]
+        study_preferences:
+          - text: "讲题要先给思路，再给步骤"
+            source_message_ids: ["h0"]
+      artifact_refs:
+        - artifact_id: ctx_compression_exam_math_001
+          kind: document_parse
+          source: exam.pdf
+          preview: "第17题：导数、函数零点、单调性"
+          recoverable: true
+      current_documents:
+        - artifact_id: ctx_compression_exam_math_001
+          filename: exam.pdf
+          parser: document_parse
+          summary: "上传试卷包含第17题，主题是导数和函数零点。"
+          question_numbers: ["17"]
+          knowledge_points: ["导数", "函数零点", "单调性"]
+      current_questions:
+        - number: "17"
+          subject: math
+          stem_preview: "已知函数 f(x)=x^3-3ax，讨论零点个数。"
+          knowledge_points: ["导数", "函数零点", "单调性"]
+          status: needs_followup
+          artifact_id: ctx_compression_exam_math_001
+      constraints:
+        - text: "讲题要先给思路，再给步骤"
+          source_message_ids: ["h0"]
+        - text: "学生是广东高三物化生，数学目标120分"
+          source_message_ids: ["h0"]
+      knowledge_progress:
+        - text: "第17题涉及导数、函数零点、单调性"
+          source_message_ids: ["a1"]
+      open_loops:
+        - text: "用户追问这个文件的知识点是什么，不要直接跳到答案"
+          source_message_ids: ["h2"]
+
+  - id: planning_policy_constraints
+    artifacts:
+      - artifact_id: ctx_compression_policy_gd_001
+        kind: official_policy_result
+        metadata:
+          source: 广东省教育考试院
+        payload:
+          source: 广东省教育考试院
+          url: "https://example.edu.cn/policy"
+          published_at: "2026-06-10"
+          province: 广东
+          topic: 志愿填报
+          content: "官方志愿填报安排与院校专业组说明。"
+          confidence: official
+    messages:
+      - id: h0
+        role: human
+        content: "我是广东考生，目标是计算机类，预算有限，优先公办。帮我做志愿规划时必须引用官方政策。家里不太能接受高学费民办，也不想去太偏远的城市；如果分数不够，希望优先考虑省内稳妥方案，再考虑省外性价比高的学校。我还没有完全理解院校专业组、选科要求和一分一段表之间怎么对应，所以规划时要解释依据，不要只给学校名单。旧规划讨论：我们聊过冲稳保比例、院校专业组、服从调剂、城市偏好、住宿费、学费、转专业政策、计算机类专业差异、软件工程学费、人工智能方向、电子信息相近专业、省内省外权衡、位次换算、历年分数线、一分一段表、招生计划变化、选科要求。旧规划讨论重复：冲稳保比例、院校专业组、服从调剂、城市偏好、住宿费、学费、转专业政策、计算机类专业差异、软件工程学费、人工智能方向、电子信息相近专业、省内省外权衡、位次换算、历年分数线、一分一段表、招生计划变化、选科要求。"
+      - id: a0
+        role: assistant
+        content: "会优先参考广东省教育考试院等官方来源，预算有限和优先公办会作为硬约束。"
+      - id: h1
+        role: human
+        content: "政策搜索拿到 artifact_id ctx_compression_policy_gd_001，来源广东省教育考试院，主题是志愿填报。"
+      - id: a1
+        role: assistant
+        content: "已将官方政策作为规划依据，后续会结合院校专业组、历年分数线和一分一段表。规划时需要先确认广东省当年志愿填报规则，再看计算机类专业组的选科要求，然后用位次而不是只用分数比较。预算有限、优先公办、不要推荐高学费民办会作为硬约束。旧分析过程：先查官方政策，再查招生计划，再查选科要求，再查历年投档线，再查一分一段表，再按冲稳保分层，再排除高学费民办，再解释每个推荐的依据。旧分析过程重复：先查官方政策，再查招生计划，再查选科要求，再查历年投档线，再查一分一段表，再按冲稳保分层，再排除高学费民办，再解释每个推荐的依据。"
+      - id: h2
+        role: human
+        content: "继续生成规划，但不要推荐民办高学费。"
+    recent_message_count: 1
+    expected_constraints:
+      - "广东"
+      - "计算机类"
+      - "预算有限"
+      - "优先公办"
+      - "必须引用官方政策"
+      - "不要推荐民办高学费"
+    answer_terms:
+      - "官方政策"
+      - "广东省教育考试院"
+      - "志愿填报"
+      - "院校专业组"
+    expected_artifact_ids:
+      - ctx_compression_policy_gd_001
+    expected_episode:
+      task:
+        intent: planning
+        subject: planning
+        topic: "广东计算机类志愿规划"
+        status: active
+      gaokao_state:
+        province: "广东"
+        target_university: "计算机类相关院校"
+        study_preferences:
+          - text: "预算有限，优先公办"
+            source_message_ids: ["h0"]
+      artifact_refs:
+        - artifact_id: ctx_compression_policy_gd_001
+          kind: official_policy_result
+          source: 广东省教育考试院
+          preview: "官方志愿填报安排与院校专业组说明"
+          recoverable: true
+      constraints:
+        - text: "规划必须引用官方政策"
+          source_message_ids: ["h0"]
+        - text: "不要推荐民办高学费"
+          source_message_ids: ["h2"]
+      decisions:
+        - text: "官方政策来源为广东省教育考试院，主题是志愿填报"
+          source_message_ids: ["h1"]
+      open_loops:
+        - text: "继续生成广东计算机类志愿规划"
+          source_message_ids: ["h2"]

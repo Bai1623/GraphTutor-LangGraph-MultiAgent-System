@@ -30,10 +30,60 @@ class SessionTask(BaseModel):
     status: Literal["active", "blocked", "completed"] = "active"
 
 
+class ArtifactReference(BaseModel):
+    """Recoverable artifact pointer that must survive conversation compaction."""
+
+    artifact_id: str
+    kind: str = ""
+    source: str = ""
+    preview: str = ""
+    recoverable: bool = True
+
+
+class CurrentDocument(BaseModel):
+    """Uploaded or retrieved document currently relevant to the session."""
+
+    artifact_id: str = ""
+    filename: str = ""
+    parser: str = ""
+    summary: str = ""
+    question_numbers: list[str] = Field(default_factory=list)
+    knowledge_points: list[str] = Field(default_factory=list)
+
+
+class CurrentQuestion(BaseModel):
+    """Question-level state extracted from an uploaded exam or user prompt."""
+
+    number: str = ""
+    subject: str = ""
+    stem_preview: str = ""
+    knowledge_points: list[str] = Field(default_factory=list)
+    status: Literal["unanswered", "explaining", "answered", "needs_followup"] = "unanswered"
+    artifact_id: str = ""
+
+
+class GaokaoLearningState(BaseModel):
+    """Gaokao-specific learning state that should survive compaction."""
+
+    grade: str = ""
+    province: str = ""
+    exam_track: str = ""
+    target_score: str = ""
+    target_university: str = ""
+    subject_goals: list[AnchoredItem] = Field(default_factory=list)
+    weak_points: list[AnchoredItem] = Field(default_factory=list)
+    recent_scores: list[AnchoredItem] = Field(default_factory=list)
+    study_preferences: list[AnchoredItem] = Field(default_factory=list)
+
+
 class SessionEpisode(BaseModel):
     """Loss-resistant summary for content that left the recent-message window."""
 
     task: SessionTask = Field(default_factory=SessionTask)
+    gaokao_state: GaokaoLearningState = Field(default_factory=GaokaoLearningState)
+    artifact_refs: list[ArtifactReference] = Field(default_factory=list)
+    current_documents: list[CurrentDocument] = Field(default_factory=list)
+    current_questions: list[CurrentQuestion] = Field(default_factory=list)
     student_state: list[AnchoredItem] = Field(default_factory=list)
     constraints: list[AnchoredItem] = Field(default_factory=list)
     decisions: list[AnchoredItem] = Field(default_factory=list)
@@ -47,6 +97,60 @@ class SessionEpisode(BaseModel):
                 f"topic={self.task.topic or '未知'}, status={self.task.status}"
             )
         ]
+        gaokao_lines = []
+        if self.gaokao_state.grade:
+            gaokao_lines.append(f"年级: {self.gaokao_state.grade}")
+        if self.gaokao_state.province:
+            gaokao_lines.append(f"省份: {self.gaokao_state.province}")
+        if self.gaokao_state.exam_track:
+            gaokao_lines.append(f"选科/方向: {self.gaokao_state.exam_track}")
+        if self.gaokao_state.target_score:
+            gaokao_lines.append(f"目标分: {self.gaokao_state.target_score}")
+        if self.gaokao_state.target_university:
+            gaokao_lines.append(f"目标院校: {self.gaokao_state.target_university}")
+        for label, items in (
+            ("科目目标", self.gaokao_state.subject_goals),
+            ("薄弱点", self.gaokao_state.weak_points),
+            ("近期成绩", self.gaokao_state.recent_scores),
+            ("学习偏好", self.gaokao_state.study_preferences),
+        ):
+            if items:
+                gaokao_lines.append(f"{label}: " + "；".join(item.text for item in items))
+        if gaokao_lines:
+            sections.append("高考学习状态:\n" + "\n".join(f"- {line}" for line in gaokao_lines))
+
+        if self.current_documents:
+            sections.append(
+                "当前文档:\n"
+                + "\n".join(
+                    (
+                        f"- artifact={doc.artifact_id or '无'}, filename={doc.filename or '未知'}, "
+                        f"parser={doc.parser or '未知'}, questions={','.join(doc.question_numbers) or '未知'}, "
+                        f"summary={doc.summary}"
+                    )
+                    for doc in self.current_documents
+                )
+            )
+        if self.current_questions:
+            sections.append(
+                "当前题目:\n"
+                + "\n".join(
+                    (
+                        f"- {question.number or '未编号'} {question.subject or '未知'} "
+                        f"[{question.status}] artifact={question.artifact_id or '无'}: "
+                        f"{question.stem_preview}"
+                    )
+                    for question in self.current_questions
+                )
+            )
+        if self.artifact_refs:
+            sections.append(
+                "可恢复 artifact 引用:\n"
+                + "\n".join(
+                    f"- {ref.artifact_id} ({ref.kind or 'unknown'}): {ref.preview}"
+                    for ref in self.artifact_refs
+                )
+            )
         labels = (
             ("学生状态", self.student_state),
             ("硬约束", self.constraints),
@@ -185,7 +289,9 @@ async def _summarize_episode(
         "2. 仅记录对后续辅导有用的信息；\n"
         "3. 每条信息填写原消息方括号中的 message id；\n"
         "4. 已完成事项不要继续放在 open_loops；\n"
-        "5. 没有证据的字段保持空，不得编造。\n\n"
+        "5. 必须保留 artifact_id、文件名、题号、知识点和可恢复引用，不得改写 artifact_id；\n"
+        "6. 高考学习状态只记录有证据的年级、省份、选科、目标分、薄弱点、近期成绩、学习偏好；\n"
+        "7. 没有证据的字段保持空，不得编造。\n\n"
         f"旧会话事件:\n{old_episode.model_dump_json()}\n\n"
         f"新增对话:\n{source_text}"
     )
