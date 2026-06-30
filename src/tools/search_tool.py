@@ -35,7 +35,7 @@ def get_search_tool() -> DuckDuckGoSearchResults:
     global _search_tool
     if _search_tool is None:
         _search_tool = DuckDuckGoSearchResults(
-            max_results=3,           # 只取前 3 条，避免信息过载
+            num_results=3,           # 只取前 3 条，避免信息过载
             output_format="list",    # 返回列表格式，方便处理
         )
     return _search_tool

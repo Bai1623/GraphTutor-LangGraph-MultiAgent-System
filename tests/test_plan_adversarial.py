@@ -181,8 +181,8 @@ class TestReviewerAcademicNode:
 
     @patch("src.graph.plan_adversarial.get_fallback_llm")
     @patch("src.graph.plan_adversarial.get_node_llm")
-    async def test_fallback_approve_on_error(self, mock_get_llm, mock_get_fallback):
-        """If structured output fails, default to approve (safe fallback)."""
+    async def test_fallback_reject_on_error(self, mock_get_llm, mock_get_fallback):
+        """If structured output fails, default to reject instead of unsafe approval."""
         mock_llm = MagicMock()
         structured = MagicMock()
         structured.ainvoke = AsyncMock(side_effect=Exception("parse error"))
@@ -198,7 +198,7 @@ class TestReviewerAcademicNode:
         state = _base_state(draft="## 计划", adv_round=1)
         result = await reviewer_academic_node(state)
 
-        assert result["academic_verdict"] == "approve"
+        assert result["academic_verdict"] == "reject"
 
 
 class TestReviewerEmotionalNode:

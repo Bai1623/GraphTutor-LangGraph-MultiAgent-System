@@ -13,6 +13,7 @@ dependencies = [
     "langgraph-checkpoint-postgres>=3.0,<4",
     # RAG
     "chromadb>=1.5,<2",
+    "onnxruntime>=1.19,<1.20; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "pymupdf>=1.27,<2",
     "rank-bm25>=0.2.2,<0.3",
     "jieba>=0.42.1,<0.43",
@@ -36,12 +37,76 @@ dependencies = [
 dev = [
     "pytest>=9.0,<10",
     "pytest-asyncio>=1.0,<2",
+    "pytest-cov>=7.0,<8",
     "httpx>=0.28,<1",
+    "ruff>=0.14,<1",
+    "mypy>=1.19,<2",
+    "types-PyYAML>=6.0,<7",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["app", "src"]
+omit = [
+    "tests/*",
+    "src/gaokao_tutor.egg-info/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 55
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "assets",
+    "chroma_store",
+    "data/cache",
+    "data/context_artifacts",
+    "data/feedback",
+    "data/memory",
+    "frontend",
+]
+
+[tool.ruff.lint]
+# Start with high-signal correctness rules, then expand as the codebase is cleaned up.
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["app.py", "src"]
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_configs = true
+no_implicit_optional = false
+check_untyped_defs = false
+disallow_untyped_defs = false
+allow_redefinition = true
+disable_error_code = [
+    "arg-type",
+    "call-arg",
+    "misc",
+    "return-value",
+    "union-attr",
+    "var-annotated",
+]
+pretty = true
 
 [build-system]
 requires = ["setuptools>=68"]

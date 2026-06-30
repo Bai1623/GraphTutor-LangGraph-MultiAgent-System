@@ -50,7 +50,7 @@ def _resolve_persist_dir(persist_directory: Optional[str] = None) -> str:
     例如 "chroma_store/" → "F:/gaokao_tutor/chroma_store/"
     确保无论从哪个目录启动项目，ChromaDB 都能找到正确的位置。
     """
-    rel = persist_directory or os.getenv("CHROMA_PERSIST_DIR", "chroma_store/")
+    rel = persist_directory or os.getenv("CHROMA_PERSIST_DIR") or "chroma_store/"
     path = Path(rel)
     if not path.is_absolute():
         path = _PROJECT_ROOT / path
@@ -68,8 +68,8 @@ def _get_embedding(model_name: Optional[str] = None) -> OpenAIEmbeddings:
     model_name = model_name or os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL)
     return OpenAIEmbeddings(
         model=model_name,
-        openai_api_key=os.getenv("SILICONFLOW_API_KEY"),
-        openai_api_base=os.getenv(
+        api_key=os.getenv("SILICONFLOW_API_KEY"),
+        base_url=os.getenv(
             "SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"
         ),
     )

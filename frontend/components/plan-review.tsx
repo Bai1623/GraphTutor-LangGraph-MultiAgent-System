@@ -28,8 +28,10 @@ export function PlanReview({ draft, onConfirm, onFeedback, isSubmitting }: PlanR
 
   // Sync when draft prop changes (re-interrupt after feedback revision)
   useEffect(() => {
-    setEditedPlan(draft)
-    setFeedbackText("")
+    queueMicrotask(() => {
+      setEditedPlan(draft)
+      setFeedbackText("")
+    })
   }, [draft])
 
   return (

@@ -521,8 +521,11 @@ async def generate_answer(state: TutorState) -> dict:
             )
             messages.append(response)
 
-            # 没有工具调用 → LLM 认为信息够了，输出最终回答
-            if not response.tool_calls:
+            # 没有工具调用 → LLM 认为信息够了，输出最终回答。
+            # Some lightweight test doubles expose arbitrary MagicMock attributes,
+            # so only a real list of tool calls should enter the tool loop.
+            tool_calls = getattr(response, "tool_calls", None)
+            if not isinstance(tool_calls, list) or not tool_calls:
                 final_content = response.content or ""
                 break
 
@@ -530,7 +533,7 @@ async def generate_answer(state: TutorState) -> dict:
             tool_rounds += 1
             span.set_attribute("agent.tool_rounds", tool_rounds)
 
-            for tc in response.tool_calls:
+            for tc in tool_calls:
                 tool_result = await _execute_tool(tc)
                 messages.append(ToolMessage(
                     content=tool_result,
