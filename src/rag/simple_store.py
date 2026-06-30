@@ -172,6 +172,6 @@ def _make_embedding_fn() -> OpenAIEmbeddings:
     """Create embedding client from env vars."""
     return OpenAIEmbeddings(
         model=os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
-        openai_api_key=os.getenv("SILICONFLOW_API_KEY"),
-        openai_api_base=os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"),
+        api_key=os.getenv("SILICONFLOW_API_KEY"),
+        base_url=os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"),
     )

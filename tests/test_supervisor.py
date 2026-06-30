@@ -111,7 +111,7 @@ class TestSupervisorNode:
 
     @patch("src.graph.supervisor.get_node_llm")
     async def test_structured_output_failure_falls_back(self, mock_get_llm):
-        """When structured output fails, fall back to academic defaults."""
+        """When structured output fails, route to unknown fallback."""
         mock_llm = MagicMock()
         structured_llm = MagicMock()
         structured_llm.ainvoke = AsyncMock(side_effect=Exception("LLM error"))
@@ -121,7 +121,7 @@ class TestSupervisorNode:
         state = {"messages": [HumanMessage(content="test")]}
         result = await supervisor_node(state)
 
-        assert result["intent"] == "academic"
+        assert result["intent"] == "unknown"
         assert result["subject"] == "other"
         assert result["keypoints"] == []
 

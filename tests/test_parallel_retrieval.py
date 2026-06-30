@@ -237,7 +237,10 @@ class TestGenerateAnswerFromMergedContext:
         assert isinstance(result["messages"][0], AIMessage)
         # Verify the prompt includes both RAG and web content
         call_args = mock_llm.ainvoke.call_args[0][0]
-        prompt_text = call_args[-1].content
+        prompt_text = next(
+            msg.content for msg in call_args
+            if isinstance(msg, HumanMessage) and "参考资料" in msg.content
+        )
         assert "Δ=b²-4ac" in prompt_text
         assert "判别式用法" in prompt_text
 

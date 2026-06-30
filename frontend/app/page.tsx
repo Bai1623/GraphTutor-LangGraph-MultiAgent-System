@@ -20,6 +20,32 @@ interface ChatSession {
 
 const initialChatHistory: ChatSession[] = []
 
+type SSEEvent =
+  | { type: "thread_id"; thread_id: string }
+  | { type: "interrupt"; draft: string; thread_id?: string }
+  | { type: "token"; content: string }
+  | { type: "text"; content: string; node?: string }
+  | { type: "done" }
+  | { type: "error"; message: string }
+  | {
+      type: "node_event"
+      node: string
+      status: "start" | "end"
+      duration_ms?: number | null
+      error?: string | null
+    }
+  | {
+      type: "usage"
+      node: string
+      input_tokens?: number
+      output_tokens?: number
+      total_tokens?: number
+    }
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 function timestamp(): string {
   return new Date().toLocaleTimeString("en-GB", { hour12: false })
 }
@@ -111,7 +137,7 @@ export default function Home() {
   }, [chatHistory])
 
   /** Process a single SSE data payload — shared between /stream and /resume */
-  const processSSEEvent = useCallback((data: any) => {
+  const processSSEEvent = useCallback((data: SSEEvent) => {
     const asstId = assistantMessageIdRef.current
 
     if (data.type === "thread_id") {
@@ -349,10 +375,10 @@ export default function Home() {
         ...prev,
         { type: "info", message: "[INFO] Stream complete.", ts: timestamp() },
       ])
-    } catch (error: any) {
+    } catch (error: unknown) {
       setLogs((prev) => [
         ...prev,
-        { type: "error", message: `[ERROR] ${error.message}`, ts: timestamp() },
+        { type: "error", message: `[ERROR] ${errorMessage(error)}`, ts: timestamp() },
       ])
     } finally {
       setIsLoading(false)
@@ -406,14 +432,14 @@ export default function Home() {
         : `附件：${files.length} 个文件（${filenames}）`
       await handleSendMessage(data.query, `${question}\n\n${attachmentLabel}`)
       return true
-    } catch (error: any) {
+    } catch (error: unknown) {
       setLogs((prev) => [
         ...prev,
-        { type: "error", message: `[ERROR] Document parsing failed: ${error.message}`, ts: timestamp() },
+        { type: "error", message: `[ERROR] Document parsing failed: ${errorMessage(error)}`, ts: timestamp() },
       ])
       setMessages((prev) => [
         ...prev,
-        { id: Date.now().toString(), role: "assistant", content: `文档解析失败：${error.message}` },
+        { id: Date.now().toString(), role: "assistant", content: `文档解析失败：${errorMessage(error)}` },
       ])
       return false
     }
@@ -453,10 +479,10 @@ export default function Home() {
         ...prev,
         { type: "info", message: "[INFO] Resume stream complete.", ts: timestamp() },
       ])
-    } catch (error: any) {
+    } catch (error: unknown) {
       setLogs((prev) => [
         ...prev,
-        { type: "error", message: `[ERROR] Resume failed: ${error.message}`, ts: timestamp() },
+        { type: "error", message: `[ERROR] Resume failed: ${errorMessage(error)}`, ts: timestamp() },
       ])
     } finally {
       setIsResuming(false)
@@ -507,10 +533,10 @@ export default function Home() {
         ...prev,
         { type: "info", message: "[INFO] Feedback revision complete.", ts: timestamp() },
       ])
-    } catch (error: any) {
+    } catch (error: unknown) {
       setLogs((prev) => [
         ...prev,
-        { type: "error", message: `[ERROR] Feedback failed: ${error.message}`, ts: timestamp() },
+        { type: "error", message: `[ERROR] Feedback failed: ${errorMessage(error)}`, ts: timestamp() },
       ])
     } finally {
       setIsResuming(false)

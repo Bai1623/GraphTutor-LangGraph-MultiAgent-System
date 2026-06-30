@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, dev, "feat/**", "release/**"]
+    branches: [master, main, dev, "feature/**", "feat/**", "release/**"]
   pull_request:
-    branches: [main, dev]
+    branches: [master, main, dev]
 
 jobs:
   unit-tests:
@@ -38,10 +38,16 @@ jobs:
       - name: Sync locked dependencies
         run: python -m uv sync --extra dev --locked --python ${{ matrix.python-version }}
 
-      - name: Run unit tests
+      - name: Run Ruff
+        run: python -m uv run ruff check .
+
+      - name: Run mypy
+        run: python -m uv run mypy
+
+      - name: Run unit tests with coverage
         env:
           OTEL_TRACING_ENABLED: "false"
-        run: python -m uv run python -m pytest tests/ --ignore=tests/test_integration.py -v --tb=short
+        run: python -m uv run pytest tests/ --ignore=tests/test_integration.py --cov --cov-report=term-missing -v --tb=short
 
   security-audit:
     runs-on: ubuntu-latest
@@ -73,7 +79,7 @@ jobs:
       - name: Run security tests
         env:
           OTEL_TRACING_ENABLED: "false"
-        run: python -m uv run python -m pytest tests/test_security.py -v --tb=short
+        run: python -m uv run pytest tests/test_security.py -v --tb=short
 
   frontend-build:
     runs-on: ubuntu-latest
@@ -90,6 +96,14 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: npm run typecheck
 
       - name: Build frontend
         working-directory: frontend

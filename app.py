@@ -458,6 +458,7 @@ async def generate_resume_sse(
     """
     config = make_thread_config(thread_id)
 
+    resume_value: str | dict[str, str]
     if feedback:
         resume_value = {"action": "feedback", "text": feedback}
     else:

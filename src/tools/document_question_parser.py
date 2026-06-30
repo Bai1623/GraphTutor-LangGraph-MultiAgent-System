@@ -156,8 +156,9 @@ def build_document_question_query(
     ]
     if artifact_id:
         parts.append(f"文档 artifact_id：{artifact_id}")
-    if (user_question or "").strip():
-        parts.append(f"我的补充问题：{user_question.strip()}")
+    normalized_question = (user_question or "").strip()
+    if normalized_question:
+        parts.append(f"我的补充问题：{normalized_question}")
     if questions:
         compact = [
             {

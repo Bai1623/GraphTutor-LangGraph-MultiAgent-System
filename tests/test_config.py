@@ -464,7 +464,6 @@ class TestNodeConfigIntegration:
     @patch("src.graph.supervisor.get_node_llm")
     async def test_supervisor_uses_config_prompt(self, mock_get_llm):
         """supervisor_node should use prompt loaded from XML config."""
-        import json
         from unittest.mock import AsyncMock
 
         from langchain_core.messages import HumanMessage
@@ -473,11 +472,12 @@ class TestNodeConfigIntegration:
 
         mock_llm = mock_get_llm.return_value
         mock_resp = type("R", (), {
-            "content": json.dumps({
-                "intent": "academic", "subject": "math", "keypoints": ["test"],
-            }),
+            "intent": "academic",
+            "keywords": ["test"],
+            "confidence": 0.9,
         })()
-        mock_llm.ainvoke = AsyncMock(return_value=mock_resp)
+        structured_llm = mock_llm.with_structured_output.return_value
+        structured_llm.ainvoke = AsyncMock(return_value=mock_resp)
 
         state = {"messages": [HumanMessage(content="test")]}
         result = await supervisor_node(state)

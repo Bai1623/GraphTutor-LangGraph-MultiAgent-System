@@ -321,9 +321,13 @@ const DAG_EDGE_DEFS: DagEdgeDef[] = [
 const NODE_WIDTH = 90
 const NODE_HEIGHT = 36
 
+type DagNodeState = "idle" | "running" | "done"
+type DagNodeData = { label: string; state: DagNodeState; durationMs?: number }
+type DagNode = RFNode<DagNodeData>
+
 function buildLayoutedElements(
-  nodeStates: Map<string, { state: "idle" | "running" | "done"; durationMs?: number }>,
-): { nodes: RFNode[]; edges: RFEdge[] } {
+  nodeStates: Map<string, { state: DagNodeState; durationMs?: number }>,
+): { nodes: DagNode[]; edges: RFEdge[] } {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
   g.setGraph({ rankdir: "TB", nodesep: 30, ranksep: 40, marginx: 10, marginy: 10 })
@@ -337,7 +341,7 @@ function buildLayoutedElements(
 
   dagre.layout(g)
 
-  const nodes: RFNode[] = DAG_NODE_IDS.map((id) => {
+  const nodes: DagNode[] = DAG_NODE_IDS.map((id) => {
     const pos = g.node(id)
     const ns = nodeStates.get(id) ?? { state: "idle" as const }
     return {
@@ -376,7 +380,7 @@ function buildLayoutedElements(
 function DagNodeComponent({ data }: NodeProps) {
   const { label, state, durationMs } = data as {
     label: string
-    state: "idle" | "running" | "done"
+    state: DagNodeState
     durationMs?: number
   }
   return (
@@ -409,7 +413,7 @@ const rfNodeTypes = { dagNode: DagNodeComponent }
 
 function GraphDAGView({ nodeEvents }: { nodeEvents: NodeEvent[] }) {
   const nodeStates = useMemo(() => {
-    const states = new Map<string, { state: "idle" | "running" | "done"; durationMs?: number }>()
+    const states = new Map<string, { state: DagNodeState; durationMs?: number }>()
     for (const id of DAG_NODE_IDS) {
       let found: NodeEvent | undefined
       for (let i = nodeEvents.length - 1; i >= 0; i--) {
@@ -448,7 +452,7 @@ function GraphDAGView({ nodeEvents }: { nodeEvents: NodeEvent[] }) {
         <MiniMap
           nodeStrokeWidth={1}
           nodeColor={(n) => {
-            const s = (n.data as any)?.state
+            const s = (n as DagNode).data.state
             if (s === "running") return "#FFCC99"
             if (s === "done") return "#3D5A40"
             return "#E8E5D8"
