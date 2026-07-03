@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from fastapi.testclient import TestClient
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -123,3 +125,44 @@ class TestInputValidation:
 
         req = ResumeRequest(thread_id="t-1", edited_plan="## 正常计划")
         assert req.edited_plan == "## 正常计划"
+
+
+class TestFeedbackEndpoint:
+    """Verify feedback writes are append-only and test-isolated."""
+
+    def test_feedback_endpoint_appends_jsonl(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("AUTH_USERNAME", "admin")
+        monkeypatch.setenv("AUTH_PASSWORD", "123456")
+        monkeypatch.setenv("AUTH_SECRET", "test-secret")
+
+        import app as app_module
+
+        feedback_file = tmp_path / "ratings.jsonl"
+        monkeypatch.setattr(app_module, "FEEDBACK_FILE", feedback_file)
+
+        client = TestClient(app_module.app)
+        login_response = client.post(
+            "/auth/login",
+            json={"username": "admin", "password": "123456"},
+        )
+        assert login_response.status_code == 200
+
+        for message_id, rating in (("msg-1", "up"), ("msg-2", "down")):
+            response = client.post(
+                "/feedback",
+                json={
+                    "message_id": message_id,
+                    "rating": rating,
+                    "query_preview": "二次函数怎么学？",
+                },
+            )
+            assert response.status_code == 200
+            assert response.json() == {"status": "ok", "rating": rating}
+
+        lines = feedback_file.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 2
+
+        entries = [json.loads(line) for line in lines]
+        assert [entry["message_id"] for entry in entries] == ["msg-1", "msg-2"]
+        assert [entry["rating"] for entry in entries] == ["up", "down"]
+        assert all(entry["query_preview"] == "二次函数怎么学？" for entry in entries)

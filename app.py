@@ -9,7 +9,9 @@ import os
 import time
 import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
+from datetime import datetime
 from pathlib import Path
+from threading import Lock
 from typing import AsyncGenerator
 
 from dotenv import load_dotenv
@@ -44,6 +46,9 @@ from src.tools.ocr_tool import perform_exam_ocr
 from src.tracing import setup_tracing, shutdown_tracing
 
 logger = logging.getLogger(__name__)
+
+FEEDBACK_FILE = Path(__file__).parent / "data" / "feedback" / "ratings.jsonl"
+_feedback_lock = Lock()
 
 
 def _semantic_cache_eligible(query: str) -> bool:
@@ -526,33 +531,21 @@ async def resume_endpoint(req: ResumeRequest, request: Request):
 
 @app.post("/feedback")
 async def feedback_endpoint(req: FeedbackRequest):
-    """接收用户对AI回复的质量反馈（👍/👎），追加到JSON文件"""
-    from datetime import datetime
-    from pathlib import Path
-    import json
-    from threading import Lock
-
-    _feedback_lock = Lock()
-    _feedback_file = Path(__file__).parent / "data" / "feedback" / "ratings.json"
+    """接收用户对 AI 回复的质量反馈，按 JSONL 追加保存。"""
 
     entry = {
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
         "message_id": req.message_id,
         "rating": req.rating,
         "query_preview": req.query_preview,
     }
 
     try:
-        _feedback_file.parent.mkdir(parents=True, exist_ok=True)
+        FEEDBACK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n"
         with _feedback_lock:
-            existing = []
-            if _feedback_file.exists():
-                try:
-                    existing = json.loads(_feedback_file.read_text(encoding="utf-8"))
-                except json.JSONDecodeError:
-                    existing = []
-            existing.append(entry)
-            _feedback_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+            with FEEDBACK_FILE.open("a", encoding="utf-8") as f:
+                f.write(line)
         logger.info("Feedback recorded: %s -> %s", req.message_id[:8], req.rating)
     except Exception:
         logger.warning("Failed to save feedback", exc_info=True)
