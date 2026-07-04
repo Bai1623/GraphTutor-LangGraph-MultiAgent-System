@@ -158,6 +158,7 @@ def invoke_with_fallback(primary, messages, *, fallback=None, span=None):
         response = primary.invoke(messages)
         if span is not None:
             span.set_attribute("llm.fallback_used", False)
+            setattr(span, "_gaokao_fallback_used", False)
         return response
     except _FALLBACK_ERRORS as exc:
         if fallback is None:
@@ -171,6 +172,7 @@ def invoke_with_fallback(primary, messages, *, fallback=None, span=None):
 
         if span is not None:
             span.set_attribute("llm.fallback_used", True)
+            setattr(span, "_gaokao_fallback_used", True)
             span.set_attribute(
                 "llm.fallback_model",
                 getattr(fallback, "model_name", "unknown"),
@@ -198,6 +200,7 @@ async def async_invoke_with_fallback(primary, messages, *, fallback=None, span=N
         response = await primary.ainvoke(messages)
         if span is not None:
             span.set_attribute("llm.fallback_used", False)
+            setattr(span, "_gaokao_fallback_used", False)
         return response
     except _FALLBACK_ERRORS as exc:
         if fallback is None:
@@ -211,6 +214,7 @@ async def async_invoke_with_fallback(primary, messages, *, fallback=None, span=N
 
         if span is not None:
             span.set_attribute("llm.fallback_used", True)
+            setattr(span, "_gaokao_fallback_used", True)
             span.set_attribute(
                 "llm.fallback_model",
                 getattr(fallback, "model_name", "unknown"),

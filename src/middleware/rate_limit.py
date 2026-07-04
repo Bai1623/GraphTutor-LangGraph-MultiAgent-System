@@ -201,7 +201,16 @@ def create_rate_limit_middleware() -> type[BaseHTTPMiddleware]:
         async def dispatch(self, request: Request, call_next: Callable):
             # 健康检查等路径跳过限流
             path = request.url.path
-            if path in ("/health", "/ping", "/docs", "/openapi.json", "/redoc"):
+            if path in (
+                "/health",
+                "/ping",
+                "/healthz",
+                "/readyz",
+                "/metrics",
+                "/docs",
+                "/openapi.json",
+                "/redoc",
+            ):
                 return await call_next(request)
 
             limiter = get_rate_limiter()

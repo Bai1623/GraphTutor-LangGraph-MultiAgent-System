@@ -43,9 +43,26 @@ from src.schemas import (
 )
 from src.tools.document_question_parser import parse_exam_uploads
 from src.tools.ocr_tool import perform_exam_ocr
-from src.tracing import setup_tracing, shutdown_tracing
+from src.tracing import (
+    REQUEST_ID_HEADER,
+    configure_logging,
+    metrics_snapshot,
+    reset_request_id,
+    set_request_id,
+    setup_tracing,
+    shutdown_tracing,
+)
+from src.tracing.metrics import (
+    record_cache_lookup,
+    record_cache_store,
+    record_http_request,
+    record_llm_tokens,
+)
+
+configure_logging()
 
 logger = logging.getLogger(__name__)
+access_logger = logging.getLogger("gaokao_tutor.access")
 
 FEEDBACK_FILE = Path(__file__).parent / "data" / "feedback" / "ratings.jsonl"
 _feedback_lock = Lock()
@@ -76,6 +93,7 @@ async def lifespan(app: FastAPI):
 
     async with AsyncExitStack() as stack:
         checkpointer = None
+        checkpointer_ready = False
         db_uri = get_db_uri()
 
         if db_uri:
@@ -86,6 +104,7 @@ async def lifespan(app: FastAPI):
                     AsyncPostgresSaver.from_conn_string(db_uri)
                 )
                 await checkpointer.setup()
+                checkpointer_ready = True
                 logger.info("PostgreSQL checkpointer initialized")
             except Exception:
                 logger.exception(
@@ -96,6 +115,8 @@ async def lifespan(app: FastAPI):
             logger.info("DB_URI not set, running without persistent state")
 
         app.state.graph = get_compiled_graph(checkpointer=checkpointer)
+        app.state.checkpointer_ready = checkpointer_ready
+        app.state.db_uri_configured = bool(db_uri)
         yield
 
     shutdown_tracing()
@@ -120,10 +141,41 @@ PUBLIC_PATHS = {
     "/auth/logout",
     "/health",
     "/ping",
+    "/healthz",
+    "/readyz",
+    "/metrics",
     "/docs",
     "/openapi.json",
     "/redoc",
 }
+
+
+@app.middleware("http")
+async def request_observability(request: Request, call_next):
+    request_id = request.headers.get(REQUEST_ID_HEADER) or str(uuid.uuid4())
+    token = set_request_id(request_id)
+    start = time.monotonic()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        response.headers[REQUEST_ID_HEADER] = request_id
+        return response
+    finally:
+        duration_ms = round((time.monotonic() - start) * 1000, 2)
+        record_http_request(status_code, duration_ms)
+        access_logger.info(
+            "request completed",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": status_code,
+                "duration_ms": duration_ms,
+                "client": request.client.host if request.client else None,
+                "user_agent": request.headers.get("user-agent"),
+            },
+        )
+        reset_request_id(token)
 
 
 @app.middleware("http")
@@ -211,6 +263,52 @@ async def logout_endpoint(response: Response):
     return {"authenticated": False}
 
 
+@app.get("/healthz")
+async def healthz_endpoint():
+    """Liveness probe: process is running and can serve HTTP."""
+    return {"status": "ok"}
+
+
+@app.get("/health")
+@app.get("/ping")
+async def legacy_health_endpoint():
+    """Backward-compatible liveness probe."""
+    return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz_endpoint(request: Request):
+    """Readiness probe: required runtime dependencies are initialized."""
+    checks = {
+        "graph": hasattr(request.app.state, "graph"),
+        "settings": (Path(__file__).parent / "config" / "settings.yaml").is_file(),
+        "prompts": (Path(__file__).parent / "config" / "prompts").is_dir(),
+    }
+
+    db_uri_configured = bool(getattr(request.app.state, "db_uri_configured", False))
+    checks["checkpointer"] = (
+        bool(getattr(request.app.state, "checkpointer_ready", False))
+        if db_uri_configured
+        else True
+    )
+
+    ready = all(checks.values())
+    status_code = 200 if ready else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ready" if ready else "not_ready",
+            "checks": checks,
+        },
+    )
+
+
+@app.get("/metrics")
+async def metrics_endpoint():
+    """Process-local metrics snapshot for dashboards."""
+    return metrics_snapshot()
+
+
 async def _stream_graph_events(
     graph,
     input_data,
@@ -294,13 +392,22 @@ async def _stream_graph_events(
                 output = event.get("data", {}).get("output")
                 usage = getattr(output, "usage_metadata", None)
                 if usage and node_name:
+                    input_tokens = usage.get("input_tokens", 0)
+                    output_tokens = usage.get("output_tokens", 0)
+                    total_tokens = usage.get("total_tokens", 0)
+                    record_llm_tokens(
+                        node_name,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        total_tokens=total_tokens,
+                    )
                     payload = json.dumps(
                         {
                             "type": "usage",
                             "node": node_name,
-                            "input_tokens": usage.get("input_tokens", 0),
-                            "output_tokens": usage.get("output_tokens", 0),
-                            "total_tokens": usage.get("total_tokens", 0),
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                            "total_tokens": total_tokens,
                         },
                         ensure_ascii=False,
                     )
@@ -374,6 +481,7 @@ async def generate_sse(
             emb_fn = _get_embedding()
             query_embedding = await asyncio.to_thread(emb_fn.embed_query, query)
             cached_answer = cache.lookup(query_embedding)
+            record_cache_lookup(hit=bool(cached_answer))
             if cached_answer:
                 logger.info("Semantic cache HIT for query: %s", query[:40])
     except Exception:
@@ -443,6 +551,7 @@ async def generate_sse(
         try:
             if query_embedding is not None:
                 cache.store(query, assistant_reply, query_embedding)
+                record_cache_store()
         except Exception:
             logger.warning("Failed to store in semantic cache", exc_info=True)
 

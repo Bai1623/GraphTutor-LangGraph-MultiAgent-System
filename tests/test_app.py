@@ -166,3 +166,75 @@ class TestFeedbackEndpoint:
         assert [entry["message_id"] for entry in entries] == ["msg-1", "msg-2"]
         assert [entry["rating"] for entry in entries] == ["up", "down"]
         assert all(entry["query_preview"] == "二次函数怎么学？" for entry in entries)
+
+
+class TestObservabilityEndpoints:
+    """Verify liveness, readiness, request ids, and metrics."""
+
+    def test_healthz_is_public_and_returns_ok(self):
+        import app as app_module
+
+        client = TestClient(app_module.app)
+        response = client.get("/healthz")
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+    def test_legacy_health_endpoints_remain_public(self):
+        import app as app_module
+
+        client = TestClient(app_module.app)
+
+        assert client.get("/health").status_code == 200
+        assert client.get("/ping").status_code == 200
+
+    def test_readyz_reports_not_ready_without_graph(self):
+        import app as app_module
+
+        if hasattr(app_module.app.state, "graph"):
+            delattr(app_module.app.state, "graph")
+
+        client = TestClient(app_module.app)
+        response = client.get("/readyz")
+
+        assert response.status_code == 503
+        assert response.json()["status"] == "not_ready"
+        assert response.json()["checks"]["graph"] is False
+
+    def test_readyz_reports_ready_when_runtime_initialized(self):
+        import app as app_module
+
+        app_module.app.state.graph = object()
+        app_module.app.state.db_uri_configured = False
+        app_module.app.state.checkpointer_ready = False
+
+        client = TestClient(app_module.app)
+        response = client.get("/readyz")
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "ready"
+
+        delattr(app_module.app.state, "graph")
+
+    def test_request_id_is_echoed(self):
+        import app as app_module
+        from src.tracing.logging import REQUEST_ID_HEADER
+
+        client = TestClient(app_module.app)
+        response = client.get("/healthz", headers={REQUEST_ID_HEADER: "req-test-1"})
+
+        assert response.headers[REQUEST_ID_HEADER] == "req-test-1"
+
+    def test_metrics_endpoint_exposes_dashboard_snapshot(self):
+        import app as app_module
+        from src.tracing.metrics import reset_metrics
+
+        reset_metrics()
+        client = TestClient(app_module.app)
+        client.get("/healthz")
+        response = client.get("/metrics")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert {"process", "http", "llm", "rag", "semantic_cache"} <= set(payload)
+        assert payload["http"]["requests_total"] >= 1

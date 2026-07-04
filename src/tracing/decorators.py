@@ -12,6 +12,7 @@ from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 
 from src.tracing.collector import get_tracer
+from src.tracing.metrics import record_llm_call
 
 
 # ---------------------------------------------------------------------------
@@ -119,15 +120,24 @@ def traced_llm_call(
             span.set_attribute("llm.temperature", temperature)
 
         start = time.monotonic()
+        error = False
         try:
             yield span
         except Exception as exc:
+            error = True
             span.set_status(StatusCode.ERROR, str(exc))
             span.record_exception(exc)
             raise
         finally:
             latency_ms = (time.monotonic() - start) * 1000
             span.set_attribute("llm.latency_ms", round(latency_ms, 2))
+            fallback_used = bool(getattr(span, "_gaokao_fallback_used", False))
+            record_llm_call(
+                node_name,
+                latency_ms,
+                error=error,
+                fallback_used=fallback_used,
+            )
 
 
 # ---------------------------------------------------------------------------

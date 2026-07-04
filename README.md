@@ -70,6 +70,7 @@ Drafter（计划起草） → Reviewer Academic ∥ Reviewer Emotional（并行�
 
 - **LLM 容灾降级**：DeepSeek 主模型超时/5xx 自动切换 SiliconFlow Qwen2.5-7B，OTel 记录容灾事件
 - **分布式链路追踪**：OpenTelemetry 全埋点，OTLP gRPC 导出到 Jaeger + SQLite 本地兜底
+- **服务可观测性**：请求级 `X-Request-ID`、结构化 JSON 日志、`/healthz` 存活探针、`/readyz` 就绪探针、`/metrics` 进程级指标快照
 - **状态持久化**：PostgreSQL LangGraph Checkpointer，支持多轮对话记忆和 HIL 中断恢复；无数据库时自动降级无状态运行
 - **SSE 流式传输**：9 种事件类型（node_event / token / usage / text / interrupt / done / error / thread_id），节点级 Token 用量统计
 - **配置驱动**：YAML 管理运行参数（温度、超时、重试上限），XML 注册表管理 16 套提示词模板

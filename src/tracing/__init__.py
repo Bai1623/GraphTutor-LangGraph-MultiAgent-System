@@ -7,6 +7,14 @@ from src.tracing.decorators import (
     traced_retrieval,
     traced_search,
 )
+from src.tracing.logging import (
+    REQUEST_ID_HEADER,
+    configure_logging,
+    get_request_id,
+    reset_request_id,
+    set_request_id,
+)
+from src.tracing.metrics import snapshot as metrics_snapshot
 
 __all__ = [
     "setup_tracing",
@@ -16,4 +24,10 @@ __all__ = [
     "traced_llm_call",
     "traced_retrieval",
     "traced_search",
+    "REQUEST_ID_HEADER",
+    "configure_logging",
+    "get_request_id",
+    "set_request_id",
+    "reset_request_id",
+    "metrics_snapshot",
 ]

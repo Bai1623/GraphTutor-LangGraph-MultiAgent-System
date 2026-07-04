@@ -42,6 +42,7 @@ from src.rag.retriever import retrieve
 from src.tools.policy_search import format_policy_results, search_official_policy
 from src.tools.search_tool import search as web_search_fn
 from src.tracing import traced_llm_call, traced_node, traced_search
+from src.tracing.metrics import record_rag_retrieval
 
 logger = logging.getLogger(__name__)
 
@@ -228,6 +229,10 @@ async def _gather_resource_intel(state: TutorState) -> str:
         try:
             result = await asyncio.to_thread(retrieve, query=query, subject=subj)
             docs = result.get("docs", [])
+            top_score = None
+            if docs:
+                top_score = docs[0].get("rerank_score", docs[0].get("score", 0))
+            record_rag_retrieval(len(docs), result.get("is_hit", False), top_score)
             if not docs:
                 return ""
             parts = [f"- {d.get('content', '')[:200]}" for d in docs[:3]]

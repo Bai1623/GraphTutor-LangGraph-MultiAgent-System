@@ -45,6 +45,7 @@ from src.rag.retriever import retrieve
 from src.tools.agent_tools import search_knowledge_base, search_web
 from src.tools.search_tool import search as web_search_fn
 from src.tracing import traced_llm_call, traced_node, traced_retrieval, traced_search
+from src.tracing.metrics import record_rag_retrieval
 
 logger = logging.getLogger(__name__)
 
@@ -192,10 +193,15 @@ async def rag_retrieve(state: TutorState) -> dict:
 
     with traced_retrieval(query=query, subject=subj) as span:
         result = await asyncio.to_thread(retrieve, query=query, subject=subj)
-        span.set_attribute("rag.doc_count", len(result.get("docs", [])))
-        span.set_attribute("rag.is_hit", result.get("is_hit", False))
+        doc_count = len(result.get("docs", []))
+        is_hit = result.get("is_hit", False)
+        top_score = None
+        span.set_attribute("rag.doc_count", doc_count)
+        span.set_attribute("rag.is_hit", is_hit)
         if result.get("docs"):
-            span.set_attribute("rag.top_score", result["docs"][0].get("score", 0))
+            top_score = result["docs"][0].get("rerank_score", result["docs"][0].get("score", 0))
+            span.set_attribute("rag.top_score", top_score)
+        record_rag_retrieval(doc_count, is_hit, top_score)
 
     docs = [
         compact_with_artifact(
