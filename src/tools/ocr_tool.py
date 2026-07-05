@@ -9,7 +9,6 @@ from typing import Any
 
 from fastapi import HTTPException, UploadFile
 
-
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 DEFAULT_MAX_IMAGE_BYTES = 8 * 1024 * 1024
 

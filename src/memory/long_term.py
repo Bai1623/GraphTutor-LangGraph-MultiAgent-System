@@ -6,7 +6,7 @@ import json
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Literal, Optional
@@ -31,10 +31,10 @@ class MemoryRecord(BaseModel):
     confidence: float = 0.8
     importance: float = 0.6
     created_at: str = Field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
     last_confirmed_at: str = Field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
     valid_until: str | None = None
     source_thread_id: str = ""
@@ -59,7 +59,7 @@ def _is_expired(record: MemoryRecord) -> bool:
     if not record.valid_until:
         return False
     try:
-        return datetime.fromisoformat(record.valid_until) <= datetime.now(timezone.utc)
+        return datetime.fromisoformat(record.valid_until) <= datetime.now(UTC)
     except ValueError:
         return False
 
@@ -68,8 +68,8 @@ def _recency(record: MemoryRecord) -> float:
     try:
         updated = datetime.fromisoformat(record.last_confirmed_at)
         if updated.tzinfo is None:
-            updated = updated.replace(tzinfo=timezone.utc)
-        age_days = max((datetime.now(timezone.utc) - updated).days, 0)
+            updated = updated.replace(tzinfo=UTC)
+        age_days = max((datetime.now(UTC) - updated).days, 0)
         return 1.0 / (1.0 + age_days / 30)
     except ValueError:
         return 0.5
@@ -89,7 +89,7 @@ class MemoryStore:
         _STORE_DIR.mkdir(parents=True, exist_ok=True)
         if _STORE_FILE.exists():
             try:
-                with open(_STORE_FILE, "r", encoding="utf-8") as file:
+                with open(_STORE_FILE, encoding="utf-8") as file:
                     self._data = json.load(file)
                 self._migrate_legacy_entries()
             except (json.JSONDecodeError, OSError):
@@ -100,7 +100,7 @@ class MemoryStore:
     def _migrate_legacy_entries(self) -> None:
         """Convert the previous string-list format in memory, then save lazily."""
         changed = False
-        for user_id, entry in list(self._data.items()):
+        for _user_id, entry in list(self._data.items()):
             if "memories" in entry:
                 continue
             legacy_facts = entry.get("facts", [])
@@ -159,7 +159,7 @@ class MemoryStore:
 
             key = (memory.type, memory.subject, memory.topic)
             if memory.topic:
-                for raw, record in zip(entry["memories"], records):
+                for raw, record in zip(entry["memories"], records, strict=False):
                     if record.status == "active" and (
                         record.type,
                         record.subject,
@@ -182,7 +182,7 @@ class MemoryStore:
                     ):
                         raw["status"] = "superseded"
 
-            entry["last_updated"] = datetime.now(timezone.utc).isoformat()
+            entry["last_updated"] = datetime.now(UTC).isoformat()
             self._save()
             return True
 
@@ -279,7 +279,7 @@ class MemoryStore:
         return "\n".join(lines)
 
 
-_memory_store: Optional[MemoryStore] = None
+_memory_store: MemoryStore | None = None
 
 
 def get_memory_store() -> MemoryStore:

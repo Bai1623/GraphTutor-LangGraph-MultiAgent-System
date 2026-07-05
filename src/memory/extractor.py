@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -68,7 +68,7 @@ async def extract_and_store(
 
     store = get_memory_store()
     new_memories: list[str] = []
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for extracted in result.memories:
         valid_until = (
             (now + timedelta(days=extracted.ttl_days)).isoformat()

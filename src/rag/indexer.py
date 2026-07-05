@@ -44,7 +44,7 @@ DEFAULT_EMBEDDING_MODEL = "BAAI/bge-m3"
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
-def _resolve_persist_dir(persist_directory: Optional[str] = None) -> str:
+def _resolve_persist_dir(persist_directory: str | None = None) -> str:
     """将相对路径解析为项目根目录下的绝对路径。
 
     例如 "chroma_store/" → "F:/gaokao_tutor/chroma_store/"
@@ -57,7 +57,7 @@ def _resolve_persist_dir(persist_directory: Optional[str] = None) -> str:
     return str(path)
 
 
-def _get_embedding(model_name: Optional[str] = None) -> OpenAIEmbeddings:
+def _get_embedding(model_name: str | None = None) -> OpenAIEmbeddings:
     """创建 OpenAI 兼容的嵌入客户端，后端是 SiliconFlow BGE-M3。
 
     为什么不直接用 OpenAI Embedding？
@@ -134,8 +134,8 @@ def _try_chromadb():
 
 def build_index(
     documents: list[Document],
-    persist_directory: Optional[str] = None,
-    embedding_model: Optional[str] = None,
+    persist_directory: str | None = None,
+    embedding_model: str | None = None,
 ):
     """从文档构建向量索引。
 
@@ -167,8 +167,8 @@ def build_index(
 
 
 def load_index(
-    persist_directory: Optional[str] = None,
-    embedding_model: Optional[str] = None,
+    persist_directory: str | None = None,
+    embedding_model: str | None = None,
 ):
     """从磁盘加载已构建的索引。
 

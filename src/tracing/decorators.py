@@ -5,15 +5,15 @@ from __future__ import annotations
 import asyncio
 import functools
 import time
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Any, Callable, Generator
+from typing import Any
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 
 from src.tracing.collector import get_tracer
 from src.tracing.metrics import record_llm_call
-
 
 # ---------------------------------------------------------------------------
 # @traced_node — wraps LangGraph node functions (sync and async)

@@ -6,8 +6,8 @@ import json
 import logging
 import sqlite3
 import threading
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult

@@ -6,7 +6,7 @@ import contextvars
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -45,7 +45,7 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -99,4 +99,4 @@ def configure_logging() -> None:
         handler.setFormatter(formatter)
         handler.addFilter(request_filter)
 
-    setattr(root, "_gaokao_logging_configured", True)
+    root.__dict__["_gaokao_logging_configured"] = True

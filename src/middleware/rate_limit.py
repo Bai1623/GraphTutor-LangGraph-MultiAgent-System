@@ -26,8 +26,9 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import Callable
 from threading import Lock
-from typing import Callable, Optional
+from typing import Optional
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -110,10 +111,7 @@ class TokenBucketRateLimiter:
 
         with self._lock:
             entry = self._buckets.get(client_ip)
-            if entry is None:
-                bucket = TokenBucket(self._rate, self._burst)
-            else:
-                bucket = entry[0]
+            bucket = TokenBucket(self._rate, self._burst) if entry is None else entry[0]
 
             allowed = bucket.consume(1)
             self._buckets[client_ip] = (bucket, time.monotonic())
@@ -152,7 +150,7 @@ class TokenBucketRateLimiter:
 # 全局单例
 # ============================================================================
 
-_limiter: Optional[TokenBucketRateLimiter] = None
+_limiter: TokenBucketRateLimiter | None = None
 
 
 def get_rate_limiter() -> TokenBucketRateLimiter:

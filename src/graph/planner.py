@@ -104,7 +104,7 @@ async def search_policy(state: TutorState) -> dict:
                     "policy_source": policy_source,
                     "policy_query": query,
                 }
-        except asyncio.TimeoutError:
+        except TimeoutError:
             span.set_attribute("search.official_timed_out", True)
         except Exception:
             logger.warning("Official policy MCP search failed, falling back to web search", exc_info=True)
@@ -119,7 +119,7 @@ async def search_policy(state: TutorState) -> dict:
             span.set_attribute("search.result_count", len(search_results))
             span.set_attribute("search.policy_source", policy_source)
             span.set_attribute("search.timed_out", False)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             search_results = []
             policy_source = "none"
             span.set_attribute("search.result_count", 0)

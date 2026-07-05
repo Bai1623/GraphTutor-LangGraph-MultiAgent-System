@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Mapping
+from collections.abc import Mapping
 
 
 def build_memory_context(state: Mapping, *, include_session: bool = True) -> str:

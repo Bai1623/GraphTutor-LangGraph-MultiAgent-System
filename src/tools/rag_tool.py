@@ -17,7 +17,7 @@ from src.rag.retriever import retrieve
 
 
 @tool
-def rag_retrieve(query: str, subject: Optional[str] = None) -> dict:
+def rag_retrieve(query: str, subject: str | None = None) -> dict:
     """从本地高考知识库检索相关内容（历年真题、课程大纲、笔记等）。
 
     参数：

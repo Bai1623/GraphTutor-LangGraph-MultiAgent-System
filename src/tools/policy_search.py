@@ -17,7 +17,6 @@ import urllib.request
 from dataclasses import asdict, dataclass
 from typing import Any
 
-
 DEFAULT_POLICY_MCP_TOOL = "policy_search"
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 
@@ -303,10 +302,12 @@ def _extract_results_payload(payload: Any) -> list[Any]:
     if isinstance(payload, list):
         return payload
     if isinstance(payload, dict):
-        if isinstance(payload.get("structuredContent"), list):
-            return payload["structuredContent"]
-        if isinstance(payload.get("results"), list):
-            return payload["results"]
+        structured_content = payload.get("structuredContent")
+        if isinstance(structured_content, list):
+            return structured_content
+        results = payload.get("results")
+        if isinstance(results, list):
+            return results
         content = payload.get("content")
         if isinstance(content, list):
             extracted: list[Any] = []

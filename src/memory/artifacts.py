@@ -9,12 +9,11 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
-
 
 _STORE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "context_artifacts"
 _DEFAULT_PREVIEW_CHARS = 800
@@ -30,7 +29,7 @@ class ContextArtifactRef(BaseModel):
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _coerce_text(value: Any) -> str:
@@ -57,7 +56,7 @@ def _stats_for_payload(payload: Any) -> dict[str, Any]:
     if isinstance(payload, list):
         stats["items"] = len(payload)
     elif isinstance(payload, dict):
-        stats["keys"] = sorted(str(key) for key in payload.keys())[:20]
+        stats["keys"] = sorted(str(key) for key in payload)[:20]
     return stats
 
 

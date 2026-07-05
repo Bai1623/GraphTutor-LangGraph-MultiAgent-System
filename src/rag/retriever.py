@@ -115,7 +115,7 @@ def _build_bm25_index() -> tuple[BM25Okapi | None, list[dict[str, Any]]]:
         corpus: list[dict[str, Any]] = []
         tokenized: list[list[str]] = []
 
-        for doc_text, meta in zip(documents, metadatas):
+        for doc_text, meta in zip(documents, metadatas, strict=False):
             if not doc_text:
                 continue
             corpus.append({
@@ -263,8 +263,8 @@ def _merge_and_dedup(
 
 def retrieve(
     query: str,
-    subject: Optional[str] = None,
-    year: Optional[str] = None,
+    subject: str | None = None,
+    year: str | None = None,
     top_k: int = DEFAULT_TOP_K,
 ) -> dict:
     """混合检索入口函数——向量 + BM25 + Reranker。
@@ -330,10 +330,7 @@ def retrieve(
     merged = _merge_and_dedup(vector_docs, bm25_docs)
 
     # ── 第 4 步：BGE Reranker 重排序 ──
-    if merged:
-        ranked = rerank(query, merged, top_n=reranker_top_n)
-    else:
-        ranked = []
+    ranked = rerank(query, merged, top_n=reranker_top_n) if merged else []
 
     # ── 第 5 步：判断是否命中 ──
     is_hit = False

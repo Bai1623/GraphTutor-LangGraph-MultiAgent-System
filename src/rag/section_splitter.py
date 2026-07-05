@@ -74,7 +74,7 @@ class SectionAwareSplitter:
     def create_documents(
         self,
         texts: list[str],
-        metadatas: Optional[list[dict]] = None,
+        metadatas: list[dict] | None = None,
     ) -> list[Document]:
         """按章节标题切分文本列表。
 

@@ -29,8 +29,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 CHUNK_SIZE = 1000        # 每个文本块的最大字符数
 CHUNK_OVERLAP = 200       # 相邻文本块之间的重叠字符数
@@ -43,7 +43,7 @@ _splitter = RecursiveCharacterTextSplitter(
 )
 
 
-def _guess_year(filename: str) -> Optional[str]:
+def _guess_year(filename: str) -> str | None:
     """从文件名中尝试提取 4 位年份。
 
     例如 "2024年高考语文试卷（新课标Ⅰ卷）.txt" → "2024"

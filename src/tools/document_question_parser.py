@@ -23,7 +23,6 @@ from src.tools.policy_search import (
     _call_stdio_mcp,
 )
 
-
 ALLOWED_DOCUMENT_TYPES = {
     "application/pdf": "pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",

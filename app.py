@@ -8,11 +8,12 @@ import logging
 import os
 import time
 import uuid
+from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
-from typing import AsyncGenerator
+from typing import Annotated
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, Request, Response, UploadFile
@@ -23,8 +24,6 @@ from langgraph.types import Command
 
 load_dotenv(Path(__file__).parent / ".env")
 
-from src.database.checkpointer import get_db_uri, make_thread_config
-from src.graph.builder import get_compiled_graph
 from src.auth import (
     COOKIE_NAME,
     authenticated_username,
@@ -33,6 +32,8 @@ from src.auth import (
     credentials_match,
     session_max_age_seconds,
 )
+from src.database.checkpointer import get_db_uri, make_thread_config
+from src.graph.builder import get_compiled_graph
 from src.schemas import (
     ChatRequest,
     DocumentParseResponse,
@@ -527,9 +528,7 @@ async def generate_sse(
         if chunk.startswith("data: "):
             try:
                 data = json.loads(chunk.removeprefix("data: ").strip())
-                if data.get("type") == "token":
-                    assistant_reply += data.get("content", "")
-                elif data.get("type") == "text":
+                if data.get("type") == "token" or data.get("type") == "text":
                     assistant_reply += data.get("content", "")
             except (json.JSONDecodeError, KeyError):
                 pass
@@ -572,11 +571,9 @@ async def generate_resume_sse(
     """
     config = make_thread_config(thread_id)
 
-    resume_value: str | dict[str, str]
-    if feedback:
-        resume_value = {"action": "feedback", "text": feedback}
-    else:
-        resume_value = edited_plan
+    resume_value: str | dict[str, str] = (
+        {"action": "feedback", "text": feedback} if feedback else edited_plan
+    )
 
     resume_input = Command(resume=resume_value)
 
@@ -599,8 +596,8 @@ async def stream_endpoint(chat: ChatRequest, request: Request):
 
 @app.post("/ocr", response_model=OcrResponse)
 async def ocr_endpoint(
-    image: UploadFile = File(...),
-    question: str = Form(default=""),
+    image: Annotated[UploadFile, File()],
+    question: Annotated[str, Form()] = "",
 ):
     result = await perform_exam_ocr(image, question)
     return OcrResponse(
@@ -613,8 +610,8 @@ async def ocr_endpoint(
 
 @app.post("/documents/parse", response_model=DocumentParseResponse)
 async def document_parse_endpoint(
-    files: list[UploadFile] = File(...),
-    question: str = Form(default=""),
+    files: Annotated[list[UploadFile], File()],
+    question: Annotated[str, Form()] = "",
 ):
     result = await parse_exam_uploads(files, question)
     return DocumentParseResponse(
@@ -652,9 +649,8 @@ async def feedback_endpoint(req: FeedbackRequest):
     try:
         FEEDBACK_FILE.parent.mkdir(parents=True, exist_ok=True)
         line = json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n"
-        with _feedback_lock:
-            with FEEDBACK_FILE.open("a", encoding="utf-8") as f:
-                f.write(line)
+        with _feedback_lock, FEEDBACK_FILE.open("a", encoding="utf-8") as f:
+            f.write(line)
         logger.info("Feedback recorded: %s -> %s", req.message_id[:8], req.rating)
     except Exception:
         logger.warning("Failed to save feedback", exc_info=True)

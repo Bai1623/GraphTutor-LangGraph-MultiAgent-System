@@ -9,7 +9,6 @@ import time
 
 from fastapi import Request
 
-
 COOKIE_NAME = "gaokao_tutor_session"
 DEFAULT_SESSION_HOURS = 12
 
@@ -76,7 +75,7 @@ def _signing_key() -> bytes:
     if configured:
         return configured.encode("utf-8")
     password = os.getenv("AUTH_PASSWORD", "123456")
-    return hashlib.sha256(f"gaokao-tutor:{password}".encode("utf-8")).digest()
+    return hashlib.sha256(f"gaokao-tutor:{password}".encode()).digest()
 
 
 def _session_hours() -> int:

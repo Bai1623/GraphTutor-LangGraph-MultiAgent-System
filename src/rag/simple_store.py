@@ -99,7 +99,7 @@ class SimpleVectorStore:
         self,
         query: str,
         k: int = 5,
-        filter: Optional[dict] = None,
+        filter: dict | None = None,
     ) -> list[tuple[Document, float]]:
         """Return top-k (Document, relevance_score) pairs."""
         if self._embeddings is None or len(self._docs) == 0:
@@ -162,9 +162,8 @@ def _matches_filter(meta: dict, filter_dict: dict) -> bool:
     if "$and" in filter_dict:
         return all(_matches_filter(meta, sub) for sub in filter_dict["$and"])
     for key, cond in filter_dict.items():
-        if isinstance(cond, dict) and "$eq" in cond:
-            if meta.get(key) != cond["$eq"]:
-                return False
+        if isinstance(cond, dict) and "$eq" in cond and meta.get(key) != cond["$eq"]:
+            return False
     return True
 
 

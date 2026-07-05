@@ -92,11 +92,11 @@ class SemanticCache:
 
         if _CACHE_FILE.exists():
             try:
-                with open(_CACHE_FILE, "r", encoding="utf-8") as f:
+                with open(_CACHE_FILE, encoding="utf-8") as f:
                     data = json.load(f)
                 self._entries = data.get("entries", [])
                 logger.info("Loaded %d cached Q&A pairs from %s", len(self._entries), _CACHE_FILE)
-            except (json.JSONDecodeError, IOError):
+            except (OSError, json.JSONDecodeError):
                 logger.warning("Failed to load cache file, starting fresh")
                 self._entries = []
         else:
@@ -119,7 +119,7 @@ class SemanticCache:
     # 公共 API
     # ------------------------------------------------------------------
 
-    def lookup(self, query_embedding: list[float]) -> Optional[str]:
+    def lookup(self, query_embedding: list[float]) -> str | None:
         """查找与给定嵌入向量最相似的缓存问题。
 
         参数：
@@ -208,7 +208,7 @@ class SemanticCache:
 # 全局单例
 # ============================================================================
 
-_cache_instance: Optional[SemanticCache] = None
+_cache_instance: SemanticCache | None = None
 
 
 def get_semantic_cache(

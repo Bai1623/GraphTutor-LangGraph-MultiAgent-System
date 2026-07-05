@@ -247,7 +247,7 @@ async def web_search(state: TutorState) -> dict:
             )
             span.set_attribute("search.result_count", len(search_results))
             span.set_attribute("search.timed_out", False)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # —— 超时：返回空结果，不阻塞主流程 ——
             search_results = []
             span.set_attribute("search.result_count", 0)

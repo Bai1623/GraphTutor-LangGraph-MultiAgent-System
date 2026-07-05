@@ -23,7 +23,6 @@ from typing import Annotated, Literal
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
-
 # ============================================================================
 # Sentinel 值：用于清空 context 字段
 # ============================================================================
