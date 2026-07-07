@@ -16,6 +16,7 @@ env/
 
 # test
 .pytest_cache/
+.coverage
 
 # some drafts
 docs/drafts/
@@ -48,6 +49,9 @@ yarn-error.log*
 pnpm-debug.log*
 frontend/dist/
 frontend/%TEMP%/
+frontend/*.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
+frontend/eslint.config 2.mjs
 
 # some local tools
 jaeger*
@@ -58,4 +62,5 @@ local_tools/cloc-2.08.exe
 CLAUDE.md
 
 
-docker-compose.override.ymlsrc/gaokao_tutor.egg-info/
+docker-compose.override.yml
+src/gaokao_tutor.egg-info/
