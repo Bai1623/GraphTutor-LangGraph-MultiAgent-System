@@ -45,6 +45,29 @@ class OcrResponse(BaseModel):
     content_type: str
 
 
+class TaskAcceptedResponse(BaseModel):
+    """Response returned when a slow workflow is accepted by the task queue."""
+
+    task_id: str
+    kind: str
+    status: str
+    status_url: str
+
+
+class TaskStatusResponse(BaseModel):
+    """Current state and optional result for a queued background task."""
+
+    task_id: str
+    kind: str
+    status: str
+    created_at: float
+    updated_at: float
+    started_at: float | None = None
+    finished_at: float | None = None
+    result: dict | None = None
+    error: str | None = None
+
+
 class ParsedQuestionResponse(BaseModel):
     """A normalized question extracted from an exam document."""
 

@@ -20,6 +20,28 @@ interface ChatSession {
 
 const initialChatHistory: ChatSession[] = []
 
+interface TaskAcceptedResponse {
+  task_id: string
+  kind: string
+  status: "queued" | "running" | "succeeded" | "failed"
+  status_url: string
+}
+
+interface DocumentParseResult {
+  questions: unknown[]
+  query: string
+  parser: string
+  segmenter_used: boolean
+}
+
+interface TaskStatusResponse {
+  task_id: string
+  kind: string
+  status: "queued" | "running" | "succeeded" | "failed"
+  result?: DocumentParseResult | null
+  error?: string | null
+}
+
 type SSEEvent =
   | { type: "thread_id"; thread_id: string }
   | { type: "interrupt"; draft: string; thread_id?: string }
@@ -48,6 +70,10 @@ function errorMessage(error: unknown): string {
 
 function timestamp(): string {
   return new Date().toLocaleTimeString("en-GB", { hour12: false })
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 export default function Home() {
@@ -418,7 +444,51 @@ export default function Home() {
         throw new Error(detail)
       }
 
-      const data = await response.json()
+      const accepted = await response.json() as TaskAcceptedResponse
+      let data: DocumentParseResult
+      if (response.status === 202) {
+        setLogs((prev) => [
+          ...prev,
+          {
+            type: "info",
+            message: `[INFO] Document parsing queued: ${accepted.task_id.slice(0, 8)}`,
+            ts: timestamp(),
+          },
+        ])
+
+        let taskStatus: TaskStatusResponse | null = null
+        for (let attempt = 0; attempt < 120; attempt += 1) {
+          await sleep(1000)
+          const taskResponse = await fetch(`${API_BASE_URL}${accepted.status_url}`, {
+            credentials: "include",
+          })
+          if (taskResponse.status === 401) {
+            setAuthState("anonymous")
+            return false
+          }
+          if (!taskResponse.ok) {
+            throw new Error(`${taskResponse.status} ${taskResponse.statusText}`)
+          }
+          taskStatus = await taskResponse.json() as TaskStatusResponse
+          if (taskStatus.status === "succeeded") {
+            if (!taskStatus.result) {
+              throw new Error("Document parsing task completed without result.")
+            }
+            data = taskStatus.result
+            break
+          }
+          if (taskStatus.status === "failed") {
+            throw new Error(taskStatus.error || "Document parsing task failed.")
+          }
+        }
+        if (!taskStatus || taskStatus.status !== "succeeded" || !taskStatus.result) {
+          throw new Error("Document parsing timed out. Please retry later.")
+        }
+        data = taskStatus.result
+      } else {
+        data = accepted as unknown as DocumentParseResult
+      }
+
       setLogs((prev) => [
         ...prev,
         {

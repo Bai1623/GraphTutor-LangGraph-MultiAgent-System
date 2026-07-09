@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -238,3 +239,118 @@ class TestObservabilityEndpoints:
         payload = response.json()
         assert {"process", "http", "llm", "rag", "semantic_cache"} <= set(payload)
         assert payload["http"]["requests_total"] >= 1
+
+
+class TestBackgroundTaskEndpoints:
+    """Verify slow workflows are queued instead of blocking request completion."""
+
+    def test_document_parse_endpoint_returns_task_and_status(self, monkeypatch):
+        monkeypatch.setenv("AUTH_USERNAME", "admin")
+        monkeypatch.setenv("AUTH_PASSWORD", "123456")
+        monkeypatch.setenv("AUTH_SECRET", "test-secret")
+
+        import app as app_module
+
+        parse_result = type(
+            "DocumentParseResult",
+            (),
+            {
+                "questions": [],
+                "recognized_text": "第1题 内容",
+                "query": "请讲解第1题",
+                "filenames": ["exam.txt"],
+                "parser": "test",
+                "segmenter_used": False,
+                "artifact_id": "artifact-1",
+                "preview": "第1题 内容",
+                "artifacts": [],
+            },
+        )()
+
+        with patch.object(
+            app_module,
+            "parse_exam_uploads_prepared",
+            new=AsyncMock(return_value=parse_result),
+        ):
+            with TestClient(app_module.app) as client:
+                login_response = client.post(
+                    "/auth/login",
+                    json={"username": "admin", "password": "123456"},
+                )
+                assert login_response.status_code == 200
+
+                response = client.post(
+                    "/documents/parse",
+                    data={"question": "讲解"},
+                    files={"files": ("exam.txt", b"hello", "text/plain")},
+                )
+                assert response.status_code == 415
+
+                response = client.post(
+                    "/documents/parse",
+                    data={"question": "讲解"},
+                    files={"files": ("exam.pdf", b"%PDF", "application/pdf")},
+                )
+                assert response.status_code == 202
+                accepted = response.json()
+                assert accepted["kind"] == "document_parse"
+                assert accepted["status_url"] == f"/tasks/{accepted['task_id']}"
+
+                status = _wait_for_task(client, accepted["status_url"])
+                assert status.status_code == 200
+                payload = status.json()
+                assert payload["status"] == "succeeded"
+                assert payload["result"]["query"] == "请讲解第1题"
+
+    def test_ocr_endpoint_returns_task(self, monkeypatch):
+        monkeypatch.setenv("AUTH_USERNAME", "admin")
+        monkeypatch.setenv("AUTH_PASSWORD", "123456")
+        monkeypatch.setenv("AUTH_SECRET", "test-secret")
+
+        import app as app_module
+
+        ocr_result = type(
+            "OcrResult",
+            (),
+            {
+                "text": "识别内容",
+                "query": "OCR 识别内容：识别内容",
+                "filename": "exam.png",
+                "content_type": "image/png",
+            },
+        )()
+
+        with patch.object(
+            app_module,
+            "perform_exam_ocr_bytes",
+            new=AsyncMock(return_value=ocr_result),
+        ):
+            with TestClient(app_module.app) as client:
+                login_response = client.post(
+                    "/auth/login",
+                    json={"username": "admin", "password": "123456"},
+                )
+                assert login_response.status_code == 200
+
+                response = client.post(
+                    "/ocr",
+                    data={"question": "讲解"},
+                    files={"image": ("exam.png", b"png", "image/png")},
+                )
+                assert response.status_code == 202
+                accepted = response.json()
+                assert accepted["kind"] == "ocr"
+
+                status = _wait_for_task(client, accepted["status_url"])
+                assert status.status_code == 200
+                assert status.json()["result"]["recognized_text"] == "识别内容"
+
+
+def _wait_for_task(client: TestClient, status_url: str):
+    response = client.get(status_url)
+    for _ in range(20):
+        if response.json().get("status") in {"succeeded", "failed"}:
+            return response
+        time.sleep(0.05)
+        response = client.get(status_url)
+    return response

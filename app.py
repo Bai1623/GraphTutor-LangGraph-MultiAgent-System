@@ -41,9 +41,12 @@ from src.schemas import (
     LoginRequest,
     OcrResponse,
     ResumeRequest,
+    TaskAcceptedResponse,
+    TaskStatusResponse,
 )
-from src.tools.document_question_parser import parse_exam_uploads
-from src.tools.ocr_tool import perform_exam_ocr
+from src.task_queue import TaskQueue
+from src.tools.document_question_parser import _read_uploads, parse_exam_uploads_prepared
+from src.tools.ocr_tool import perform_exam_ocr_bytes, read_image_upload
 from src.tracing import (
     REQUEST_ID_HEADER,
     configure_logging,
@@ -91,6 +94,11 @@ def _semantic_cache_eligible(query: str) -> bool:
 async def lifespan(app: FastAPI):
     """Manage async resources: tracing, PostgreSQL checkpointer, graph."""
     setup_tracing()
+    app.state.task_queue = TaskQueue(
+        maxsize=int(os.getenv("TASK_QUEUE_MAXSIZE", "100")),
+        workers=int(os.getenv("TASK_QUEUE_WORKERS", "2")),
+    )
+    await app.state.task_queue.start()
 
     async with AsyncExitStack() as stack:
         checkpointer = None
@@ -120,6 +128,7 @@ async def lifespan(app: FastAPI):
         app.state.db_uri_configured = bool(db_uri)
         yield
 
+    await app.state.task_queue.stop()
     shutdown_tracing()
 
 
@@ -149,6 +158,39 @@ PUBLIC_PATHS = {
     "/openapi.json",
     "/redoc",
 }
+
+
+def _accepted_task_response(record, path: str) -> JSONResponse:
+    payload = TaskAcceptedResponse(
+        task_id=record.task_id,
+        kind=record.kind,
+        status=record.status,
+        status_url=f"/tasks/{record.task_id}",
+    ).model_dump()
+    return JSONResponse(status_code=202, content=payload, headers={"Location": path})
+
+
+def _ocr_result_payload(result) -> dict:
+    return OcrResponse(
+        recognized_text=result.text,
+        query=result.query,
+        filename=result.filename,
+        content_type=result.content_type,
+    ).model_dump()
+
+
+def _document_parse_result_payload(result) -> dict:
+    return DocumentParseResponse(
+        questions=[item.to_dict() for item in result.questions],
+        recognized_text=result.recognized_text,
+        query=result.query,
+        filenames=result.filenames,
+        parser=result.parser,
+        segmenter_used=result.segmenter_used,
+        artifact_id=result.artifact_id,
+        preview=result.preview,
+        artifacts=result.artifacts,
+    ).model_dump()
 
 
 @app.middleware("http")
@@ -594,37 +636,72 @@ async def stream_endpoint(chat: ChatRequest, request: Request):
     )
 
 
-@app.post("/ocr", response_model=OcrResponse)
+async def _get_task_queue(request: Request) -> TaskQueue:
+    queue = getattr(request.app.state, "task_queue", None)
+    if queue is None:
+        queue = TaskQueue(
+            maxsize=int(os.getenv("TASK_QUEUE_MAXSIZE", "100")),
+            workers=int(os.getenv("TASK_QUEUE_WORKERS", "2")),
+        )
+        request.app.state.task_queue = queue
+    if not queue.is_running:
+        await queue.start()
+    return queue
+
+
+@app.post("/ocr", response_model=TaskAcceptedResponse, status_code=202)
 async def ocr_endpoint(
+    request: Request,
     image: Annotated[UploadFile, File()],
     question: Annotated[str, Form()] = "",
 ):
-    result = await perform_exam_ocr(image, question)
-    return OcrResponse(
-        recognized_text=result.text,
-        query=result.query,
-        filename=result.filename,
-        content_type=result.content_type,
-    )
+    image_bytes, content_type = await read_image_upload(image)
+    filename = image.filename
+
+    async def task() -> dict:
+        result = await perform_exam_ocr_bytes(
+            image_bytes,
+            content_type,
+            filename=filename,
+            question=question,
+        )
+        return _ocr_result_payload(result)
+
+    try:
+        queue = await _get_task_queue(request)
+        record = await queue.submit("ocr", task)
+    except RuntimeError as exc:
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
+    return _accepted_task_response(record, f"/tasks/{record.task_id}")
 
 
-@app.post("/documents/parse", response_model=DocumentParseResponse)
+@app.post("/documents/parse", response_model=TaskAcceptedResponse, status_code=202)
 async def document_parse_endpoint(
+    request: Request,
     files: Annotated[list[UploadFile], File()],
     question: Annotated[str, Form()] = "",
 ):
-    result = await parse_exam_uploads(files, question)
-    return DocumentParseResponse(
-        questions=[item.to_dict() for item in result.questions],
-        recognized_text=result.recognized_text,
-        query=result.query,
-        filenames=result.filenames,
-        parser=result.parser,
-        segmenter_used=result.segmenter_used,
-        artifact_id=result.artifact_id,
-        preview=result.preview,
-        artifacts=result.artifacts,
-    )
+    prepared = await _read_uploads(files)
+
+    async def task() -> dict:
+        result = await parse_exam_uploads_prepared(prepared, question)
+        return _document_parse_result_payload(result)
+
+    try:
+        queue = await _get_task_queue(request)
+        record = await queue.submit("document_parse", task)
+    except RuntimeError as exc:
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
+    return _accepted_task_response(record, f"/tasks/{record.task_id}")
+
+
+@app.get("/tasks/{task_id}", response_model=TaskStatusResponse)
+async def task_status_endpoint(task_id: str, request: Request):
+    queue = await _get_task_queue(request)
+    record = await queue.get(task_id)
+    if record is None:
+        return JSONResponse(status_code=404, content={"detail": "Task not found."})
+    return TaskStatusResponse(**record.to_dict())
 
 
 @app.post("/resume")

@@ -81,6 +81,19 @@ async def parse_exam_uploads(
 ) -> DocumentParseResult:
     """Parse one document or multiple exam images into normalized questions."""
     prepared = await _read_uploads(uploads)
+    return await parse_exam_uploads_prepared(prepared, question)
+
+
+async def parse_exam_uploads_prepared(
+    prepared: list[dict[str, Any]],
+    question: str | None = None,
+) -> DocumentParseResult:
+    """Parse already-read uploads.
+
+    Background tasks cannot safely keep FastAPI ``UploadFile`` objects alive after
+    the request returns, so endpoints read and validate bytes first, then enqueue
+    this coroutine.
+    """
     kinds = {item["kind"] for item in prepared}
     if len(kinds) != 1:
         raise HTTPException(
