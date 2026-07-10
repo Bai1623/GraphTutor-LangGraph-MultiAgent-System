@@ -1,0 +1,14 @@
+suite: quality_gate
+kind: quality_gate
+description: Fixed release gate for core Agent/RAG quality signals.
+sub_suites:
+  - routing
+  - rag
+  - hallucination
+thresholds:
+  overall_pass_rate: 1.0
+  routing_accuracy: 0.90
+  rag_recall_at_k: 0.85
+  rag_mrr: 0.70
+  rag_hit_rate: 0.85
+  hallucination_pass_rate: 0.90

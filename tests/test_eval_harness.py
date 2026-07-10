@@ -17,6 +17,16 @@ def test_loads_rag_golden_suite() -> None:
     assert "thresholds" in suite
 
 
+def test_loads_hallucination_and_quality_gate_suites() -> None:
+    hallucination = run_eval.load_suite("hallucination")
+    gate = run_eval.load_suite("quality_gate")
+
+    assert hallucination["kind"] == "hallucination"
+    assert hallucination["cases"]
+    assert gate["kind"] == "quality_gate"
+    assert gate["sub_suites"] == ["routing", "rag", "hallucination"]
+
+
 def test_threshold_results_support_min_max_and_default_minimum() -> None:
     metrics = {
         "accuracy": 0.95,
@@ -92,6 +102,70 @@ def test_rag_breakdown_groups_metrics() -> None:
     }
     assert breakdown["subject"]["english"]["hit_rate"] == 1.0
     assert breakdown["query_type"]["formula"]["total_cases"] == 2
+
+
+def test_classification_metric_summary_tracks_positive_and_negative_recall() -> None:
+    details = [
+        {"expected": True, "actual": True, "passed": True},
+        {"expected": True, "actual": False, "passed": False},
+        {"expected": False, "actual": False, "passed": True},
+        {"expected": False, "actual": True, "passed": False},
+    ]
+
+    metrics = run_eval._classification_metric_summary(
+        details,
+        expected_key="expected",
+        actual_key="actual",
+        positive_value=True,
+    )
+
+    assert metrics["pass_rate"] == 0.5
+    assert metrics["positive_recall"] == 0.5
+    assert metrics["negative_recall"] == 0.5
+    assert metrics["positive_precision"] == 0.5
+
+
+def test_quality_gate_metrics_flattens_core_signals() -> None:
+    results = [
+        {
+            "id": "routing",
+            "kind": "routing",
+            "passed": True,
+            "metrics": {"accuracy": 0.95, "cost_latency": {"total_tokens": 10}},
+        },
+        {
+            "id": "rag_retrieval",
+            "kind": "rag",
+            "passed": True,
+            "metrics": {
+                "recall_at_k": 0.9,
+                "mrr": 0.8,
+                "hit_rate": 1.0,
+                "precision_at_k": 0.3,
+                "cost_latency": {"total_tokens": 0},
+            },
+        },
+        {
+            "id": "hallucination",
+            "kind": "hallucination",
+            "passed": False,
+            "metrics": {
+                "pass_rate": 0.75,
+                "hallucination_recall": 0.5,
+                "faithful_recall": 1.0,
+                "cost_latency": {"total_tokens": 20},
+            },
+        },
+    ]
+
+    metrics = run_eval._quality_gate_metrics(results)
+
+    assert metrics["overall_pass_rate"] == 0.667
+    assert metrics["routing_accuracy"] == 0.95
+    assert metrics["rag_recall_at_k"] == 0.9
+    assert metrics["rag_mrr"] == 0.8
+    assert metrics["hallucination_pass_rate"] == 0.75
+    assert metrics["cost_latency"]["total_tokens"] == 30
 
 
 def test_eval_telemetry_collects_usage_latency_and_rounds() -> None:

@@ -348,15 +348,19 @@ OTEL_TRACING_ENABLED=false python -m uv run python -m pytest tests/ --ignore=tes
 python -m uv run python -m pytest --collect-only -q
 
 # 评测 harness（golden case 与执行逻辑分离）
+python -m uv run python scripts/run_eval.py --suite quality_gate --output artifacts/eval/
 python -m uv run python scripts/run_eval.py --suite rag --output artifacts/eval/
 python -m uv run python scripts/run_eval.py --suite routing --output artifacts/eval/
+python -m uv run python scripts/run_eval.py --suite hallucination --output artifacts/eval/
 python -m uv run python scripts/run_eval.py --suite planning --output artifacts/eval/
 
 # 前端构建检查
 cd frontend && npm run build
 ```
 
-RAG golden 评测集人工从 `data/chinese/`、`data/math/`、`data/english/` 的高考语文试卷、数学知识点、英语知识点资料中构建，覆盖精确试卷召回、章节召回、宽泛主题检索、概念/公式/方法/模板/策略检索等查询类型。`scripts/run_eval.py --suite rag` 会输出整体 Recall@K、Precision@K、MRR、Hit Rate、平均延迟，并按 `subject`、`topic`、`query_type`、`difficulty` 生成 breakdown，便于发现具体薄弱维度。
+`quality_gate` 是上线前固定质量门禁，会聚合 `routing`、`rag`、`hallucination` 三类核心指标：Supervisor routing accuracy、RAG Recall@K/MRR/Hit Rate、幻觉评估 pass rate/faithful recall/hallucination recall。单项 suite 仍可独立运行，便于定位失败来源。
+
+RAG golden 评测集人工从 `data/chinese/`、`data/math/`、`data/english/` 的高考语文试卷、数学知识点、英语知识点资料中构建，覆盖精确试卷召回、章节召回、宽泛主题检索、概念/公式/方法/模板/策略检索等查询类型。`scripts/run_eval.py --suite rag` 会输出整体 Recall@K、Precision@K、MRR、Hit Rate、平均延迟，并按 `subject`、`topic`、`query_type`、`difficulty` 生成 breakdown，便于发现具体薄弱维度。`scripts/run_eval.py --suite hallucination` 会用 golden 上下文与回答样例校验 `evaluate_hallucination` 对忠实回答和编造回答的判别能力。
 
 评测 JSON 和 Markdown 报告会额外输出 `cost_latency`，包含 `total_tokens`、`node_tokens`、`wall_time_ms`、`node_latency_ms`、`fallback_used`、`tool_rounds`、`retry_count`、`adv_round` 等字段，用于量化 RAG、reranker、Web search 和 Agent tool loop 的成本与延迟变化。
 

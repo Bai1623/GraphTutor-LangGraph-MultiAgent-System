@@ -35,6 +35,11 @@ sys.path.insert(0, str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env")
 
 SUITE_FILES = {
+    "gate": "quality_gate.yaml",
+    "hallucination": "hallucination.yaml",
+    "hallucination_quality": "hallucination.yaml",
+    "quality": "quality_gate.yaml",
+    "quality_gate": "quality_gate.yaml",
     "rag": "rag_retrieval.yaml",
     "rag_retrieval": "rag_retrieval.yaml",
     "routing": "routing.yaml",
@@ -301,6 +306,36 @@ def _rag_breakdown(details: list[dict[str, Any]], fields: tuple[str, ...]) -> di
     return breakdown
 
 
+def _classification_metric_summary(
+    details: list[dict[str, Any]],
+    *,
+    expected_key: str,
+    actual_key: str,
+    positive_value: Any,
+) -> dict[str, Any]:
+    total = len(details)
+    correct = sum(1 for d in details if d.get("passed"))
+    positives = [d for d in details if d.get(expected_key) == positive_value]
+    negatives = [d for d in details if d.get(expected_key) != positive_value]
+    true_positives = sum(1 for d in positives if d.get(actual_key) == positive_value)
+    true_negatives = sum(1 for d in negatives if d.get(actual_key) != positive_value)
+    predicted_positives = [d for d in details if d.get(actual_key) == positive_value]
+    false_positives = sum(1 for d in predicted_positives if d.get(expected_key) != positive_value)
+    return {
+        "total_cases": total,
+        "correct": correct,
+        "pass_rate": round(correct / total, 3) if total else 0,
+        "positive_cases": len(positives),
+        "negative_cases": len(negatives),
+        "positive_recall": round(true_positives / len(positives), 3) if positives else 0,
+        "negative_recall": round(true_negatives / len(negatives), 3) if negatives else 0,
+        "positive_precision": round(
+            true_positives / (true_positives + false_positives),
+            3,
+        ) if (true_positives + false_positives) else 0,
+    }
+
+
 def run_rag_suite(suite: dict[str, Any]) -> dict[str, Any]:
     from src.rag.retriever import retrieve
 
@@ -443,6 +478,94 @@ async def run_routing_suite(suite: dict[str, Any]) -> dict[str, Any]:
     return _with_thresholds(_base_result(suite, metrics, details), suite.get("thresholds", {}))
 
 
+async def run_hallucination_suite(suite: dict[str, Any]) -> dict[str, Any]:
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from src.graph.academic import evaluate_hallucination
+
+    defaults = suite.get("defaults", {})
+    timeout_s = float(defaults.get("timeout_s", 60))
+    cases = suite.get("cases", [])
+    details = []
+
+    print(f"Running hallucination suite '{suite['suite']}' ({len(cases)} cases)")
+
+    for i, case in enumerate(cases, 1):
+        question = case["question"]
+        answer = case["answer"]
+        context = case.get("context", [])
+        expected = bool(case["expected_hallucination"])
+        state = {
+            "messages": [HumanMessage(content=question), AIMessage(content=answer)],
+            "context": [
+                {
+                    "type": "rag",
+                    "content": item.get("content", ""),
+                    "source": item.get("source", "golden"),
+                }
+                for item in context
+            ],
+            "retry_count": int(case.get("retry_count", 0)),
+        }
+
+        start = time.monotonic()
+        error = None
+        try:
+            output = await asyncio.wait_for(evaluate_hallucination(state), timeout=timeout_s)
+        except TimeoutError:
+            output = {"hallucination_detected": False}
+            error = "timeout"
+        except Exception as exc:
+            output = {"hallucination_detected": False}
+            error = str(exc)
+        elapsed_ms = (time.monotonic() - start) * 1000
+
+        actual = bool(output.get("hallucination_detected", False))
+        passed = actual == expected and error is None
+        cost_latency = _empty_cost_latency()
+        cost_latency.update({
+            "wall_time_ms": round(elapsed_ms, 1),
+            "node_latency_ms": {"evaluate_hallucination": round(elapsed_ms, 1)},
+            "retry_count": _to_int(output.get("retry_count")),
+        })
+        detail = {
+            "id": case.get("id", f"case_{i}"),
+            "question": question,
+            "category": case.get("category"),
+            "expected_hallucination": expected,
+            "actual_hallucination": actual,
+            "reason": output.get("hallucination_reason", ""),
+            "passed": passed,
+            "error": error,
+            "elapsed_ms": round(elapsed_ms, 1),
+            "cost_latency": cost_latency,
+        }
+        details.append(detail)
+        status = "OK" if passed else "FAIL"
+        print(f"  [{i}/{len(cases)}] {detail['id']} hallucination={actual} {status}")
+
+    summary = _classification_metric_summary(
+        details,
+        expected_key="expected_hallucination",
+        actual_key="actual_hallucination",
+        positive_value=True,
+    )
+    metrics = {
+        "total_cases": summary["total_cases"],
+        "correct": summary["correct"],
+        "pass_rate": summary["pass_rate"],
+        "hallucination_recall": summary["positive_recall"],
+        "faithful_recall": summary["negative_recall"],
+        "hallucination_precision": summary["positive_precision"],
+        "avg_latency_ms": round(
+            sum(d["elapsed_ms"] for d in details) / len(details),
+            1,
+        ) if details else 0,
+        "cost_latency": _cost_latency_summary(details),
+    }
+    return _with_thresholds(_base_result(suite, metrics, details), suite.get("thresholds", {}))
+
+
 async def run_planning_suite(suite: dict[str, Any]) -> dict[str, Any]:
     from collections import Counter
 
@@ -519,6 +642,60 @@ async def run_planning_suite(suite: dict[str, Any]) -> dict[str, Any]:
         "avg_latency_s": round(sum(d["elapsed_s"] for d in details) / n, 1) if n else 0,
         "cost_latency": _cost_latency_summary(details),
     }
+    return _with_thresholds(_base_result(suite, metrics, details), suite.get("thresholds", {}))
+
+
+def _quality_gate_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
+    metrics: dict[str, Any] = {
+        "total_suites": len(results),
+        "passed_suites": sum(1 for result in results if result.get("passed")),
+    }
+    metrics["overall_pass_rate"] = (
+        round(metrics["passed_suites"] / metrics["total_suites"], 3)
+        if metrics["total_suites"]
+        else 0
+    )
+
+    for result in results:
+        kind = result.get("kind")
+        suite_metrics = result.get("metrics", {})
+        if kind == "routing":
+            metrics["routing_accuracy"] = suite_metrics.get("accuracy", 0)
+        elif kind == "rag":
+            metrics["rag_recall_at_k"] = suite_metrics.get("recall_at_k", 0)
+            metrics["rag_mrr"] = suite_metrics.get("mrr", 0)
+            metrics["rag_hit_rate"] = suite_metrics.get("hit_rate", 0)
+            metrics["rag_precision_at_k"] = suite_metrics.get("precision_at_k", 0)
+        elif kind == "hallucination":
+            metrics["hallucination_pass_rate"] = suite_metrics.get("pass_rate", 0)
+            metrics["hallucination_recall"] = suite_metrics.get("hallucination_recall", 0)
+            metrics["faithful_recall"] = suite_metrics.get("faithful_recall", 0)
+
+    metrics["cost_latency"] = _cost_latency_summary([
+        {"cost_latency": result.get("metrics", {}).get("cost_latency", {})}
+        for result in results
+    ])
+    return metrics
+
+
+async def run_quality_gate_suite(suite: dict[str, Any]) -> dict[str, Any]:
+    sub_suites = suite.get("sub_suites", ["routing", "rag", "hallucination"])
+    details = []
+
+    print(f"Running quality gate '{suite['suite']}' ({len(sub_suites)} suites)")
+
+    for suite_name in sub_suites:
+        result = await run_suite(str(suite_name))
+        details.append({
+            "id": result["suite"],
+            "kind": result["kind"],
+            "passed": bool(result.get("passed")),
+            "metrics": result.get("metrics", {}),
+            "thresholds": result.get("thresholds", []),
+        })
+        print(f"  [{result['suite']}] {'PASS' if result.get('passed') else 'FAIL'}")
+
+    metrics = _quality_gate_metrics(details)
     return _with_thresholds(_base_result(suite, metrics, details), suite.get("thresholds", {}))
 
 
@@ -643,6 +820,10 @@ async def run_suite(suite_name: str) -> dict[str, Any]:
         return run_rag_suite(suite)
     if kind == "routing":
         return await run_routing_suite(suite)
+    if kind == "hallucination":
+        return await run_hallucination_suite(suite)
+    if kind == "quality_gate":
+        return await run_quality_gate_suite(suite)
     if kind == "planning":
         return await run_planning_suite(suite)
     raise ValueError(f"Unsupported suite kind: {kind}")
@@ -668,7 +849,11 @@ async def main() -> int:
     )
     args = parser.parse_args()
 
-    suite_names = ["rag", "routing", "planning"] if args.suite == "all" else [args.suite]
+    suite_names = (
+        ["rag", "routing", "hallucination", "planning"]
+        if args.suite == "all"
+        else [args.suite]
+    )
     if len(suite_names) > 1 and args.output.suffix.lower() == ".json":
         print("--output must be a directory when running multiple suites", file=sys.stderr)
         return 2

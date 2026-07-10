@@ -1,0 +1,45 @@
+suite: hallucination
+kind: hallucination
+description: Golden cases for answer faithfulness evaluation against retrieved context.
+defaults:
+  timeout_s: 60
+thresholds:
+  pass_rate: 0.90
+  faithful_recall: 0.90
+  hallucination_recall: 0.90
+cases:
+  - id: faithful_math_derivative
+    category: faithful
+    question: 导数的几何意义是什么？
+    context:
+      - source: math_function_derivative
+        content: 导数 f'(x0) 表示函数 y=f(x) 在点 x0 处切线的斜率，也可用于求切线方程。
+    answer: 导数的几何意义是曲线在某一点处切线的斜率，因此可以用 f'(x0) 求该点切线方程。
+    expected_hallucination: false
+
+  - id: faithful_english_reading
+    category: faithful
+    question: 英语阅读主旨题怎么做？
+    context:
+      - source: english_reading_strategy
+        content: 主旨题应优先关注首尾段、段落主题句和反复出现的关键词，避免只根据局部细节判断。
+    answer: 主旨题要先看首尾段和主题句，再结合反复出现的关键词判断全文中心，不要只抓某个细节。
+    expected_hallucination: false
+
+  - id: hallucinated_math_formula
+    category: fabricated_formula
+    question: 二项分布的方差是什么？
+    context:
+      - source: math_probability
+        content: 二项分布 X~B(n,p) 的期望为 E(X)=np，方差为 D(X)=np(1-p)。
+    answer: 二项分布的方差是 D(X)=np，同时标准差就是 np。
+    expected_hallucination: true
+
+  - id: hallucinated_source_claim
+    category: unsupported_source
+    question: 2025全国一卷作文主题是什么？
+    context:
+      - source: chinese_2025_national1
+        content: 2025年全国Ⅰ卷作文材料围绕科技发展与青年责任展开，要求结合材料写作。
+    answer: 2025全国一卷作文明确要求写一篇关于人工智能取代教师的议论文，并引用了教育部最新文件。
+    expected_hallucination: true
