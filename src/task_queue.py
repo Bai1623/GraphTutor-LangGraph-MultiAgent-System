@@ -117,6 +117,14 @@ class TaskQueue:
             try:
                 record.result = await func()
                 record.status = "succeeded"
+            except TimeoutError:
+                record.status = "failed"
+                record.error = "Task timed out."
+                record.traceback = traceback.format_exc()
+                logger.exception(
+                    "Background task timed out",
+                    extra={"task_id": task_id, "task_kind": record.kind, "worker": worker_index},
+                )
             except Exception as exc:
                 record.status = "failed"
                 record.error = str(exc)

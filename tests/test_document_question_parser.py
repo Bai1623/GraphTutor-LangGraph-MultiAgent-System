@@ -78,8 +78,16 @@ def test_pdf_routes_to_configured_mcp_tool(monkeypatch):
 @pytest.mark.asyncio
 async def test_multiple_images_use_ocr_fallback_when_mcp_fails():
     uploads = [
-        UploadFile(filename="page1.png", file=_BytesFile(b"one"), headers={"content-type": "image/png"}),
-        UploadFile(filename="page2.png", file=_BytesFile(b"two"), headers={"content-type": "image/png"}),
+        UploadFile(
+            filename="page1.png",
+            file=_BytesFile(b"\x89PNG\r\n\x1a\none"),
+            headers={"content-type": "image/png"},
+        ),
+        UploadFile(
+            filename="page2.png",
+            file=_BytesFile(b"\x89PNG\r\n\x1a\ntwo"),
+            headers={"content-type": "image/png"},
+        ),
     ]
     fallback_result = type("Ocr", (), {"text": "第1题 内容"})()
 
@@ -150,7 +158,7 @@ async def test_pdf_uses_local_fallback_without_mcp(monkeypatch):
     monkeypatch.delenv("DOCUMENT_MCP_COMMAND", raising=False)
     upload = UploadFile(
         filename="exam.pdf",
-        file=_BytesFile(b"%PDF"),
+        file=_BytesFile(b"%PDF-1.4\n"),
         headers={"content-type": "application/pdf"},
     )
 

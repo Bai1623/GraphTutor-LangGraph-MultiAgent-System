@@ -9,6 +9,8 @@ from typing import Any
 
 from fastapi import HTTPException, UploadFile
 
+from src.security.upload_security import validate_upload_security
+
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 DEFAULT_MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
@@ -51,13 +53,6 @@ def build_exam_ocr_query(ocr_text: str, question: str | None = None) -> str:
 
 
 async def read_image_upload(upload: UploadFile) -> tuple[bytes, str]:
-    content_type = upload.content_type or ""
-    if content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(
-            status_code=415,
-            detail="Only JPEG, PNG, and WebP exam images are supported.",
-        )
-
     max_bytes = _get_max_image_bytes()
     image_bytes = await upload.read()
     if not image_bytes:
@@ -67,7 +62,13 @@ async def read_image_upload(upload: UploadFile) -> tuple[bytes, str]:
             status_code=413,
             detail=f"Image is too large. Max size is {max_bytes // 1024 // 1024}MB.",
         )
-    return image_bytes, content_type
+    metadata = await validate_upload_security(
+        data=image_bytes,
+        filename=upload.filename,
+        content_type=upload.content_type,
+        expected_kind="image",
+    )
+    return image_bytes, metadata.content_type
 
 
 def get_ocr_llm() -> Any:

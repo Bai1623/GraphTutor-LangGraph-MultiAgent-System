@@ -16,7 +16,7 @@ from threading import Lock
 from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, Request, Response, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from langchain_core.messages import HumanMessage
@@ -34,6 +34,12 @@ from src.auth import (
 )
 from src.database.checkpointer import get_db_uri, make_thread_config
 from src.graph.builder import get_compiled_graph
+from src.quota import (
+    QuotaExceeded,
+    get_quota_store,
+    quota_error_response,
+    quota_headers,
+)
 from src.schemas import (
     ChatRequest,
     DocumentParseResponse,
@@ -44,6 +50,7 @@ from src.schemas import (
     TaskAcceptedResponse,
     TaskStatusResponse,
 )
+from src.security.upload_security import record_upload_audit
 from src.task_queue import TaskQueue
 from src.tools.document_question_parser import _read_uploads, parse_exam_uploads_prepared
 from src.tools.ocr_tool import perform_exam_ocr_bytes, read_image_upload
@@ -191,6 +198,56 @@ def _document_parse_result_payload(result) -> dict:
         preview=result.preview,
         artifacts=result.artifacts,
     ).model_dump()
+
+
+def _upload_task_timeout_seconds() -> float:
+    try:
+        value = float(os.getenv("UPLOAD_TASK_TIMEOUT_SECONDS", "180"))
+    except ValueError:
+        value = 180.0
+    return max(1.0, min(value, 900.0))
+
+
+def _audit_files_from_prepared(prepared: list[dict]) -> list[dict]:
+    return [
+        {
+            "filename": item.get("filename"),
+            "content_type": item.get("content_type"),
+            "kind": item.get("kind"),
+            "size_bytes": item.get("size_bytes", len(item.get("data", b""))),
+            "sha256": item.get("sha256"),
+        }
+        for item in prepared
+    ]
+
+
+def _audit_files_from_uploads(uploads) -> list[dict]:
+    upload_list = uploads if isinstance(uploads, list) else [uploads]
+    return [
+        {
+            "filename": getattr(upload, "filename", None),
+            "content_type": getattr(upload, "content_type", None),
+        }
+        for upload in upload_list
+    ]
+
+
+def _quota_user_id(request: Request) -> str:
+    return str(getattr(request.state, "username", configured_username()))
+
+
+def _to_int(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _quota_sse_payload(exc: QuotaExceeded) -> str:
+    payload = quota_error_response(exc)
+    payload["type"] = "error"
+    payload["message"] = payload["detail"]
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 @app.middleware("http")
@@ -352,11 +409,18 @@ async def metrics_endpoint():
     return metrics_snapshot()
 
 
+@app.get("/quota/me")
+async def quota_me_endpoint(request: Request):
+    """Return today's quota usage for the authenticated user."""
+    return get_quota_store().snapshot(_quota_user_id(request))
+
+
 async def _stream_graph_events(
     graph,
     input_data,
     config: dict,
     thread_id: str,
+    quota_user_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Shared SSE event streaming logic for /stream and /resume.
 
@@ -364,6 +428,7 @@ async def _stream_graph_events(
     token streaming, usage, and interrupt events.
     """
     node_start_times: dict[str, float] = {}
+    max_retry_count_seen = 0
 
     try:
         async for event in graph.astream_events(input_data, config=config, version="v2"):
@@ -392,6 +457,19 @@ async def _stream_graph_events(
                         output = event.get("data", {}).get("output")
                         if isinstance(output, dict) and output.get("error"):
                             error = str(output["error"])
+                        if quota_user_id and isinstance(output, dict):
+                            retry_count = _to_int(output.get("retry_count"))
+                            retry_delta = max(0, retry_count - max_retry_count_seen)
+                            if retry_delta:
+                                try:
+                                    get_quota_store().consume(
+                                        quota_user_id,
+                                        retries=retry_delta,
+                                    )
+                                except QuotaExceeded as exc:
+                                    yield _quota_sse_payload(exc)
+                                    return
+                                max_retry_count_seen = retry_count
 
                         payload = json.dumps(
                             {
@@ -444,6 +522,15 @@ async def _stream_graph_events(
                         output_tokens=output_tokens,
                         total_tokens=total_tokens,
                     )
+                    if quota_user_id and total_tokens:
+                        try:
+                            get_quota_store().consume(
+                                quota_user_id,
+                                tokens=int(total_tokens),
+                            )
+                        except QuotaExceeded as exc:
+                            yield _quota_sse_payload(exc)
+                            return
                     payload = json.dumps(
                         {
                             "type": "usage",
@@ -489,6 +576,7 @@ async def generate_sse(
     graph,
     thread_id: str | None = None,
     user_id: str | None = None,
+    quota_user_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream LangGraph events as Server-Sent Events (SSE).
 
@@ -564,7 +652,13 @@ async def generate_sse(
     # 收集对话内容供后续记忆提取 + 缓存存储
     assistant_reply = ""
 
-    async for chunk in _stream_graph_events(graph, state_input, config, thread_id):
+    async for chunk in _stream_graph_events(
+        graph,
+        state_input,
+        config,
+        thread_id,
+        quota_user_id=quota_user_id,
+    ):
         yield chunk
         # 从 SSE 事件中收集 assistant 的回复文本
         if chunk.startswith("data: "):
@@ -602,6 +696,7 @@ async def generate_resume_sse(
     feedback: str | None,
     graph,
     thread_id: str,
+    quota_user_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Resume an interrupted graph and stream remaining events as SSE.
 
@@ -619,20 +714,33 @@ async def generate_resume_sse(
 
     resume_input = Command(resume=resume_value)
 
-    async for chunk in _stream_graph_events(graph, resume_input, config, thread_id):
+    async for chunk in _stream_graph_events(
+        graph,
+        resume_input,
+        config,
+        thread_id,
+        quota_user_id=quota_user_id,
+    ):
         yield chunk
 
 
 @app.post("/stream")
 async def stream_endpoint(chat: ChatRequest, request: Request):
+    quota_user_id = _quota_user_id(request)
+    try:
+        snapshot = get_quota_store().consume(quota_user_id, requests=1)
+    except QuotaExceeded as exc:
+        return JSONResponse(status_code=429, content=quota_error_response(exc))
     return StreamingResponse(
         generate_sse(
             chat.query,
             request.app.state.graph,
             thread_id=chat.thread_id,
             user_id=chat.user_id,
+            quota_user_id=quota_user_id,
         ),
         media_type="text/event-stream",
+        headers=quota_headers(snapshot),
     )
 
 
@@ -655,15 +763,46 @@ async def ocr_endpoint(
     image: Annotated[UploadFile, File()],
     question: Annotated[str, Form()] = "",
 ):
-    image_bytes, content_type = await read_image_upload(image)
+    try:
+        image_bytes, content_type = await read_image_upload(image)
+    except HTTPException as exc:
+        record_upload_audit(
+            action="ocr",
+            status="rejected",
+            files=_audit_files_from_uploads(image),
+            request=request,
+            error=str(exc.detail),
+        )
+        raise
     filename = image.filename
+    audit_files = [{
+        "filename": filename,
+        "content_type": content_type,
+        "kind": "image",
+        "size_bytes": len(image_bytes),
+    }]
+    quota_user_id = _quota_user_id(request)
+    try:
+        get_quota_store().consume(quota_user_id, requests=1, uploads=1)
+    except QuotaExceeded as exc:
+        record_upload_audit(
+            action="ocr",
+            status="rejected",
+            files=audit_files,
+            request=request,
+            error=str(exc),
+        )
+        return JSONResponse(status_code=429, content=quota_error_response(exc))
 
     async def task() -> dict:
-        result = await perform_exam_ocr_bytes(
-            image_bytes,
-            content_type,
-            filename=filename,
-            question=question,
+        result = await asyncio.wait_for(
+            perform_exam_ocr_bytes(
+                image_bytes,
+                content_type,
+                filename=filename,
+                question=question,
+            ),
+            timeout=_upload_task_timeout_seconds(),
         )
         return _ocr_result_payload(result)
 
@@ -671,7 +810,21 @@ async def ocr_endpoint(
         queue = await _get_task_queue(request)
         record = await queue.submit("ocr", task)
     except RuntimeError as exc:
+        record_upload_audit(
+            action="ocr",
+            status="rejected",
+            files=audit_files,
+            request=request,
+            error=str(exc),
+        )
         return JSONResponse(status_code=503, content={"detail": str(exc)})
+    record_upload_audit(
+        action="ocr",
+        status="accepted",
+        files=audit_files,
+        request=request,
+        task_id=record.task_id,
+    )
     return _accepted_task_response(record, f"/tasks/{record.task_id}")
 
 
@@ -681,17 +834,57 @@ async def document_parse_endpoint(
     files: Annotated[list[UploadFile], File()],
     question: Annotated[str, Form()] = "",
 ):
-    prepared = await _read_uploads(files)
+    try:
+        prepared = await _read_uploads(files)
+    except HTTPException as exc:
+        record_upload_audit(
+            action="document_parse",
+            status="rejected",
+            files=_audit_files_from_uploads(files),
+            request=request,
+            error=str(exc.detail),
+        )
+        raise
+    audit_files = _audit_files_from_prepared(prepared)
+    quota_user_id = _quota_user_id(request)
+    try:
+        get_quota_store().consume(quota_user_id, requests=1, uploads=len(prepared))
+    except QuotaExceeded as exc:
+        record_upload_audit(
+            action="document_parse",
+            status="rejected",
+            files=audit_files,
+            request=request,
+            error=str(exc),
+        )
+        return JSONResponse(status_code=429, content=quota_error_response(exc))
 
     async def task() -> dict:
-        result = await parse_exam_uploads_prepared(prepared, question)
+        result = await asyncio.wait_for(
+            parse_exam_uploads_prepared(prepared, question),
+            timeout=_upload_task_timeout_seconds(),
+        )
         return _document_parse_result_payload(result)
 
     try:
         queue = await _get_task_queue(request)
         record = await queue.submit("document_parse", task)
     except RuntimeError as exc:
+        record_upload_audit(
+            action="document_parse",
+            status="rejected",
+            files=audit_files,
+            request=request,
+            error=str(exc),
+        )
         return JSONResponse(status_code=503, content={"detail": str(exc)})
+    record_upload_audit(
+        action="document_parse",
+        status="accepted",
+        files=audit_files,
+        request=request,
+        task_id=record.task_id,
+    )
     return _accepted_task_response(record, f"/tasks/{record.task_id}")
 
 
@@ -706,9 +899,21 @@ async def task_status_endpoint(task_id: str, request: Request):
 
 @app.post("/resume")
 async def resume_endpoint(req: ResumeRequest, request: Request):
+    quota_user_id = _quota_user_id(request)
+    try:
+        snapshot = get_quota_store().consume(quota_user_id, requests=1)
+    except QuotaExceeded as exc:
+        return JSONResponse(status_code=429, content=quota_error_response(exc))
     return StreamingResponse(
-        generate_resume_sse(req.edited_plan, req.feedback, request.app.state.graph, req.thread_id),
+        generate_resume_sse(
+            req.edited_plan,
+            req.feedback,
+            request.app.state.graph,
+            req.thread_id,
+            quota_user_id=quota_user_id,
+        ),
         media_type="text/event-stream",
+        headers=quota_headers(snapshot),
     )
 
 

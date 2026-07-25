@@ -110,7 +110,7 @@ async def test_document_parse_returns_preview_and_artifact_ref(tmp_path):
     store = ContextArtifactStore(tmp_path)
     upload = UploadFile(
         filename="exam.pdf",
-        file=_BytesFile(b"%PDF"),
+        file=_BytesFile(b"%PDF-1.4\n"),
         headers={"content-type": "application/pdf"},
     )
     full_text = "第1题 求函数零点。" * 200

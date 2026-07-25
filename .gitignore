@@ -31,6 +31,8 @@ learning_notes/
 logs/
 artifacts/
 data/context_artifacts/
+data/audit/
+data/quota/
 .backend*.log
 .frontend*.log
 

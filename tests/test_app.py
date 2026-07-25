@@ -289,7 +289,7 @@ class TestBackgroundTaskEndpoints:
                 response = client.post(
                     "/documents/parse",
                     data={"question": "讲解"},
-                    files={"files": ("exam.pdf", b"%PDF", "application/pdf")},
+                    files={"files": ("exam.pdf", b"%PDF-1.4\n", "application/pdf")},
                 )
                 assert response.status_code == 202
                 accepted = response.json()
@@ -335,7 +335,7 @@ class TestBackgroundTaskEndpoints:
                 response = client.post(
                     "/ocr",
                     data={"question": "讲解"},
-                    files={"image": ("exam.png", b"png", "image/png")},
+                    files={"image": ("exam.png", b"\x89PNG\r\n\x1a\npng", "image/png")},
                 )
                 assert response.status_code == 202
                 accepted = response.json()

@@ -9,13 +9,13 @@ import os
 import zipfile
 from dataclasses import asdict, dataclass, field
 from io import BytesIO
-from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
 from fastapi import HTTPException, UploadFile
 
 from src.memory.artifacts import artifact_ref_dict, get_context_artifact_store, make_preview
+from src.security.upload_security import validate_upload_security
 from src.tools.ocr_tool import perform_exam_ocr_bytes
 from src.tools.policy_search import (
     PolicySearchError,
@@ -23,21 +23,6 @@ from src.tools.policy_search import (
     _call_stdio_mcp,
 )
 
-ALLOWED_DOCUMENT_TYPES = {
-    "application/pdf": "pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-    "image/jpeg": "image",
-    "image/png": "image",
-    "image/webp": "image",
-}
-EXTENSION_KINDS = {
-    ".pdf": "pdf",
-    ".docx": "docx",
-    ".jpg": "image",
-    ".jpeg": "image",
-    ".png": "image",
-    ".webp": "image",
-}
 DEFAULT_MAX_FILE_BYTES = 25 * 1024 * 1024
 DEFAULT_MAX_FILES = 12
 
@@ -215,29 +200,25 @@ async def _read_uploads(uploads: list[UploadFile]) -> list[dict[str, Any]]:
     ) * 1024 * 1024
     prepared = []
     for upload in uploads:
-        filename = upload.filename or "upload"
-        content_type = upload.content_type or ""
-        kind = ALLOWED_DOCUMENT_TYPES.get(content_type) or EXTENSION_KINDS.get(
-            Path(filename).suffix.lower()
-        )
-        if not kind:
-            raise HTTPException(
-                status_code=415,
-                detail="Only PDF, DOCX, JPEG, PNG, and WebP files are supported.",
-            )
         data = await upload.read()
-        if not data:
-            raise HTTPException(status_code=400, detail=f"Uploaded file is empty: {filename}")
+        filename = upload.filename or "upload"
         if len(data) > max_bytes:
             raise HTTPException(
                 status_code=413,
                 detail=f"File is too large: {filename}. Max size is {max_bytes // 1024 // 1024}MB.",
             )
+        metadata = await validate_upload_security(
+            data=data,
+            filename=filename,
+            content_type=upload.content_type,
+        )
         prepared.append({
-            "filename": filename,
-            "content_type": content_type,
-            "kind": kind,
+            "filename": metadata.filename,
+            "content_type": metadata.content_type,
+            "kind": metadata.kind,
             "data": data,
+            "size_bytes": metadata.size_bytes,
+            "sha256": metadata.sha256,
         })
     return prepared
 
