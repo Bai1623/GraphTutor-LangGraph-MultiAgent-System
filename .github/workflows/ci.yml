@@ -79,7 +79,7 @@ jobs:
       - name: Run security tests
         env:
           OTEL_TRACING_ENABLED: "false"
-        run: python -m uv run pytest tests/test_security.py -v --tb=short
+        run: python -m uv run pytest tests/test_security.py tests/test_upload_security.py tests/test_quota.py -v --tb=short
 
   frontend-build:
     runs-on: ubuntu-latest
@@ -92,6 +92,19 @@ jobs:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
+
+      - name: Enforce frontend lockfile policy
+        working-directory: frontend
+        run: |
+          if [ -f pnpm-lock.yaml ]; then
+            echo "frontend/pnpm-lock.yaml exists but repository policy is npm-only for frontend dependencies"
+            echo "Please remove frontend/pnpm-lock.yaml and keep frontend/package-lock.json"
+            exit 1
+          fi
+          if [ ! -f package-lock.json ]; then
+            echo "frontend/package-lock.json is missing. This repo expects npm lockfile-driven installs"
+            exit 1
+          fi
 
       - name: Install frontend dependencies
         working-directory: frontend

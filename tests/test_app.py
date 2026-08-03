@@ -97,6 +97,24 @@ class TestEnvExample:
         content = (PROJECT_ROOT / ".env.example").read_text(encoding="utf-8")
         assert "ALLOWED_ORIGINS" in content
 
+    def test_upload_security_and_quota_envs_are_documented(self):
+        content = (PROJECT_ROOT / ".env.example").read_text(encoding="utf-8")
+        required = {
+            "UPLOAD_TASK_TIMEOUT_SECONDS",
+            "UPLOAD_MAX_UNCOMPRESSED_MB",
+            "UPLOAD_MAX_COMPRESSION_RATIO",
+            "UPLOAD_AV_COMMAND",
+            "UPLOAD_AV_TIMEOUT_SECONDS",
+            "QUOTA_ENABLED",
+            "QUOTA_DAILY_REQUESTS",
+            "QUOTA_DAILY_TOKENS",
+            "QUOTA_DAILY_UPLOADS",
+            "QUOTA_DAILY_RETRIES",
+        }
+
+        for key in required:
+            assert f"{key}=" in content
+
 
 class TestInputValidation:
     """Verify Pydantic max_length constraints on request schemas (SEC-01)."""

@@ -1,4 +1,6 @@
 # local settings and apis
+.DS_Store
+frontend/.DS_Store
 .streamlit/secrets.toml
 .env
 .env.local
@@ -54,6 +56,7 @@ frontend/%TEMP%/
 frontend/*.tsbuildinfo
 frontend/tsconfig.tsbuildinfo
 frontend/eslint.config 2.mjs
+frontend/pnpm-lock.yaml
 
 # some local tools
 jaeger*

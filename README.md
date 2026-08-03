@@ -257,6 +257,8 @@ python -m uv run python -m uvicorn app:app --host 127.0.0.1 --port 8002
 ```bash
 cd frontend
 npm install
+# 前端统一使用 npm：仅保留 frontend/package-lock.json，避免提交 frontend/pnpm-lock.yaml
+
 
 # 创建前端环境配置
 echo "NEXT_PUBLIC_API_URL=http://localhost:8002" > .env
@@ -274,6 +276,39 @@ docker compose up -d
 # 可选：启用 Jaeger 追踪
 docker compose --profile observability up -d
 ```
+
+### 5. 上线配置
+
+上线前至少确认这些环境变量：
+
+```bash
+# 私有登录
+AUTH_USERNAME=admin
+AUTH_PASSWORD=replace_with_a_strong_password
+AUTH_SECRET=replace_with_a_long_random_string
+AUTH_COOKIE_SECURE=true
+
+# 用户级每日限额
+QUOTA_ENABLED=true
+QUOTA_DAILY_REQUESTS=200
+QUOTA_DAILY_TOKENS=300000
+QUOTA_DAILY_UPLOADS=50
+QUOTA_DAILY_RETRIES=30
+
+# 上传安全
+DOCUMENT_PARSE_MAX_FILE_MB=25
+DOCUMENT_PARSE_MAX_FILES=12
+OCR_MAX_IMAGE_MB=8
+UPLOAD_TASK_TIMEOUT_SECONDS=180
+UPLOAD_MAX_UNCOMPRESSED_MB=100
+UPLOAD_MAX_COMPRESSION_RATIO=100
+UPLOAD_AV_COMMAND=
+UPLOAD_AV_TIMEOUT_SECONDS=30
+```
+
+`UPLOAD_AV_COMMAND` 留空时只启用本地静态检查：扩展名/MIME/文件签名一致性、PDF 活动内容拦截、DOCX 宏与压缩包异常检查。生产环境建议接入杀毒命令，例如 `clamscan --no-summary`。
+
+每日 quota 按认证用户记录在 `data/quota/daily.json`，上传审计记录在 `data/audit/uploads.jsonl`。这两个目录是运行时数据，默认不提交到 Git。当前实现适合单机部署；多实例部署应迁移到 Redis 或 PostgreSQL。
 
 ---
 
