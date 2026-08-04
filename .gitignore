@@ -20,6 +20,9 @@ env/
 .pytest_cache/
 .coverage
 
+# generated local assets
+multiscale_temporal_conv_flow.jpg
+
 # some drafts
 docs/drafts/
 
