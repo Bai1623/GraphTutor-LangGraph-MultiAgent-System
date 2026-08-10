@@ -45,5 +45,8 @@ COPY --from=frontend-builder /app/frontend/.next/static ./frontend-standalone/fr
 
 EXPOSE 8000 3000
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).read()"
+
 # Start both frontend and backend
 CMD ["sh", "-c", "node frontend-standalone/frontend/server.js & uvicorn app:app --host 0.0.0.0 --port 8000"]
