@@ -23,6 +23,21 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# This file is a manual live-integration harness run via
+# `python -m tests.test_integration`; it requires real API keys and a graph
+# object supplied by its own main().
+collect_ignore = ["test_integration.py"]
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter_state():
+    """Keep the process-global rate limiter from leaking buckets across tests."""
+    import src.middleware.rate_limit as rate_limit
+
+    rate_limit._limiter = None
+    yield
+    rate_limit._limiter = None
+
 
 @pytest.fixture
 def human_msg():
