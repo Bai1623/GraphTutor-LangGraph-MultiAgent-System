@@ -1,4 +1,4 @@
-"""试卷章节感知分块器（SectionAwareSplitter）—— 中文试卷专用
+r"""试卷章节感知分块器（SectionAwareSplitter）—— 中文试卷专用
 
 标准的 RecursiveCharacterTextSplitter 按固定字符数切分文本，
 但对于高考试卷这种有明确标题结构的文档，存在两个问题：
