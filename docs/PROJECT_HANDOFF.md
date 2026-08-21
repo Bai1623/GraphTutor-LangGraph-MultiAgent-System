@@ -5,7 +5,7 @@
 > 当前分支：`master`
 > 当前远端：`origin=https://gitee.com/git_bai/work.git`，`github=git@github.com:Bai1623/GraphTutor-LangGraph-MultiAgent-System.git`
 
-本文档用于换电脑后快速恢复开发环境，并说明项目当前进度、关键模块、验证命令和后续注意事项。
+本文档用于换电脑后快速恢复开发环境，并说明项目当前进度、关键模块、验证命令和后续注意事项。换电脑当天只想按步骤核对时，先看 [`NEW_MACHINE_CHECKLIST.md`](NEW_MACHINE_CHECKLIST.md)。
 
 ## 1. 当前状态
 

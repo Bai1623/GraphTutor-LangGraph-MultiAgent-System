@@ -375,7 +375,7 @@ gaokao_tutor/
 
 ## 测试
 
-换电脑或交接开发前，先阅读 [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md)。
+换电脑或交接开发前，先阅读 [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md)；实际换机当天可直接按 [`docs/NEW_MACHINE_CHECKLIST.md`](docs/NEW_MACHINE_CHECKLIST.md) 核对。
 
 ```bash
 # 单元测试（无需在线 API，全部 Mock）
