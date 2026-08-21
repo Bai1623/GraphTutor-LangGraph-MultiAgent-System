@@ -375,6 +375,8 @@ gaokao_tutor/
 
 ## 测试
 
+换电脑或交接开发前，先阅读 [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md)。
+
 ```bash
 # 单元测试（无需在线 API，全部 Mock）
 OTEL_TRACING_ENABLED=false python -m uv run python -m pytest tests/ --ignore=tests/test_integration.py -v --tb=short
