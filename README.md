@@ -180,6 +180,8 @@ graph TD
 - DeepSeek API Key + SiliconFlow API Key
 - PostgreSQL（可选，不配置时自动降级为无状态模式）
 
+仓库提供 `.python-version` 和 `.nvmrc`，使用 `uv` / `nvm` 时会自动选择推荐的 Python 3.11 和 Node.js 20。
+
 ### 1. 克隆项目
 
 ```bash
