@@ -46,6 +46,7 @@ cp .env.example .env
 ```bash
 python -m pip install uv
 python -m uv sync --extra dev --locked --python 3.11
+python -m uv run python scripts/project_doctor.py
 python -m uv run python scripts/build_index.py
 ```
 
