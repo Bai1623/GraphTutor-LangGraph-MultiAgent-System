@@ -380,6 +380,9 @@ gaokao_tutor/
 换电脑或交接开发前，先阅读 [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md)；实际换机当天可直接按 [`docs/NEW_MACHINE_CHECKLIST.md`](docs/NEW_MACHINE_CHECKLIST.md) 核对。
 
 ```bash
+# 一键工程基线：环境、后端测试/覆盖率、静态检查、前端构建
+python -m uv run python scripts/run_baseline.py
+
 # 单元测试（无需在线 API，全部 Mock）
 OTEL_TRACING_ENABLED=false python -m uv run python -m pytest tests/ --ignore=tests/test_integration.py -v --tb=short
 
