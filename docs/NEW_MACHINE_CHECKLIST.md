@@ -2,6 +2,8 @@
 
 这份清单用于换电脑当天快速核对。完整背景和模块说明见 [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md)。
 
+最近一次新电脑实测结果见 [`BASELINE_VALIDATION.md`](BASELINE_VALIDATION.md)。
+
 ## 1. 拉取代码
 
 ```bash
