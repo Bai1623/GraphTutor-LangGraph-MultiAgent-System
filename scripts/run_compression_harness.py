@@ -14,12 +14,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.evaluation.golden_dataset import load_golden_suite
 from src.memory.artifacts import ContextArtifactStore
 from src.memory.compression_harness import (
     episode_from_case,
@@ -34,10 +33,7 @@ DEFAULT_SUITE = PROJECT_ROOT / "eval" / "golden" / "compression.yaml"
 
 
 def _load_suite(path: Path) -> dict[str, Any]:
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError(f"Invalid compression suite: {path}")
-    return data
+    return load_golden_suite(path)
 
 
 def _write_case_artifacts(case: dict[str, Any], store: ContextArtifactStore) -> None:

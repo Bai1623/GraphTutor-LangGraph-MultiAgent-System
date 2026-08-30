@@ -20,7 +20,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
 from dotenv import load_dotenv
 
 
@@ -33,6 +32,8 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "artifacts" / "eval"
 
 sys.path.insert(0, str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env")
+
+from src.evaluation.golden_dataset import load_golden_suite
 
 SUITE_FILES = {
     "gate": "quality_gate.yaml",
@@ -60,11 +61,7 @@ def load_suite(suite: str, golden_dir: Path = GOLDEN_DIR) -> dict[str, Any]:
             raise ValueError(f"Unknown suite '{suite}'. Known suites: {known}, all")
         path = golden_dir / file_name
 
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError(f"Suite file must contain a mapping: {path}")
-    data["_path"] = str(path)
-    return data
+    return load_golden_suite(path)
 
 
 def _hit(expected_sources: list[str], source: str) -> bool:

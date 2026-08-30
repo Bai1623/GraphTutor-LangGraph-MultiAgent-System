@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 
 from langchain_core.messages import HumanMessage
+import pytest
 
+from scripts import run_compression_harness
 from src.memory.artifacts import ContextArtifactStore
 from src.memory.compression_harness import (
     episode_from_case,
@@ -95,3 +97,29 @@ def test_compression_harness_scores_constraints_and_artifacts(tmp_path):
     assert metrics.answer_consistency == 1.0
     assert metrics.artifact_recoverability == 1.0
     assert metrics.passed is True
+
+
+def test_load_compression_suite_rejects_missing_expected_episode(tmp_path):
+    path = tmp_path / "invalid-compression.yaml"
+    path.write_text(
+        """
+suite: context_compression
+description: Invalid compression fixture.
+thresholds:
+  token_reduction: 0.2
+cases:
+  - id: missing_expected_episode
+    messages:
+      - id: h0
+        role: human
+        content: 请继续讲题
+    recent_message_count: 1
+    expected_constraints: []
+    answer_terms: []
+    expected_artifact_ids: []
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"cases\.0\.expected_episode"):
+        run_compression_harness._load_suite(path)

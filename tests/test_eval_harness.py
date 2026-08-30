@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from scripts import run_eval
 
 
@@ -25,6 +27,127 @@ def test_loads_hallucination_and_quality_gate_suites() -> None:
     assert hallucination["cases"]
     assert gate["kind"] == "quality_gate"
     assert gate["sub_suites"] == ["routing", "rag", "hallucination"]
+
+
+def test_all_golden_suites_have_valid_schemas() -> None:
+    for path in sorted(run_eval.GOLDEN_DIR.glob("*.yaml")):
+        suite = run_eval.load_suite(str(path))
+
+        assert suite["suite"]
+
+
+def test_load_suite_rejects_missing_kind_specific_field(tmp_path: Path) -> None:
+    path = tmp_path / "invalid-routing.yaml"
+    path.write_text(
+        """
+suite: routing
+kind: routing
+description: Invalid routing fixture.
+thresholds:
+  accuracy: 0.9
+cases:
+  - id: missing_expected_intent
+    query: 帮我制定复习计划
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"cases\.0\.expected_intent"):
+        run_eval.load_suite(str(path))
+
+
+def test_load_suite_rejects_duplicate_case_ids(tmp_path: Path) -> None:
+    path = tmp_path / "duplicate-routing.yaml"
+    path.write_text(
+        """
+suite: routing
+kind: routing
+description: Invalid routing fixture.
+thresholds:
+  accuracy: 0.9
+cases:
+  - id: duplicate
+    query: 第一个问题
+    expected_intent: academic
+  - id: duplicate
+    query: 第二个问题
+    expected_intent: planning
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate case id 'duplicate'"):
+        run_eval.load_suite(str(path))
+
+
+def test_load_suite_rejects_missing_required_threshold(tmp_path: Path) -> None:
+    path = tmp_path / "missing-routing-threshold.yaml"
+    path.write_text(
+        """
+suite: routing
+kind: routing
+description: Invalid routing fixture.
+thresholds:
+  unrelated_metric: 0.9
+cases:
+  - id: valid_case
+    query: 帮我制定复习计划
+    expected_intent: planning
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"thresholds\.accuracy"):
+        run_eval.load_suite(str(path))
+
+
+def test_load_suite_rejects_coerced_boolean(tmp_path: Path) -> None:
+    path = tmp_path / "invalid-hallucination.yaml"
+    path.write_text(
+        """
+suite: hallucination
+kind: hallucination
+description: Invalid hallucination fixture.
+defaults:
+  timeout_s: 60
+thresholds:
+  pass_rate: 0.9
+  faithful_recall: 0.9
+  hallucination_recall: 0.9
+cases:
+  - id: invalid_boolean
+    category: faithful
+    question: 导数是什么？
+    context:
+      - source: math
+        content: 导数表示变化率。
+    answer: 导数表示变化率。
+    expected_hallucination: "false"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"cases\.0\.expected_hallucination"):
+        run_eval.load_suite(str(path))
+
+
+def test_load_suite_rejects_non_string_schema_name(tmp_path: Path) -> None:
+    path = tmp_path / "invalid-schema-name.yaml"
+    path.write_text(
+        """
+suite: invalid
+kind:
+  - routing
+description: Invalid discriminator fixture.
+thresholds:
+  accuracy: 0.9
+cases: []
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="schema name must be a string"):
+        run_eval.load_suite(str(path))
 
 
 def test_threshold_results_support_min_max_and_default_minimum() -> None:
