@@ -1,11 +1,14 @@
 # GraphTutor 项目交接文档
 
-> 更新时间：2026-08-21
-> 当前本地路径：`/Users/a221209/Desktop/cc/work`
+> 更新时间：2026-08-31
+> 当前来源机器路径：`/Users/a2022-710/Desktop/cc/ LangGraph`（目录名前有一个空格，仅代表本机路径）
 > 当前分支：`master`
-> 当前远端：`origin=https://gitee.com/git_bai/work.git`，`github=git@github.com:Bai1623/GraphTutor-LangGraph-MultiAgent-System.git`
+> 当前远端：`origin=git@gitee.com:git_bai/work.git`，`github=git@github.com:Bai1623/GraphTutor-LangGraph-MultiAgent-System.git`
+> 当前业务代码基线：`3e5b2d9 feat: validate golden evaluation schemas`
 
 本文档用于换电脑后快速恢复开发环境，并说明项目当前进度、关键模块、验证命令和后续注意事项。换电脑当天只想按步骤核对时，先看 [`NEW_MACHINE_CHECKLIST.md`](NEW_MACHINE_CHECKLIST.md)。
+
+新电脑接手时以 Gitee `origin/master` 的最新提交为唯一准线，不要照搬来源机器的绝对路径。当前来源机器没有 `.env` 和向量索引；密钥必须从密码管理器或旧开发环境单独迁移，不能通过 Git 传递。
 
 ## 1. 当前状态
 
@@ -23,16 +26,27 @@
 - 上下文压缩：RAG/Web/政策/文档解析结果落盘，state 只保留 preview 和 artifact 引用；会话超预算后压缩为结构化摘要。
 - 生产基础设施：登录、限流、quota、上传安全、OpenTelemetry、health/readiness/metrics、Dockerfile、docker-compose、CI。
 
+最近完成的工程化推进：
+
+- `BASE-01`：用 `.python-version=3.11`、`.nvmrc=20` 固定本地运行时主版本。
+- `BASE-02`：完成新电脑后端、前端和探针运行基线，记录在 [`BASELINE_VALIDATION.md`](BASELINE_VALIDATION.md)。
+- `BASE-03`：增加 `scripts/project_doctor.py`，可在不输出密钥内容的前提下检查运行时、锁文件、知识数据、密钥状态和向量索引。
+- `BASE-04`：增加 `scripts/run_baseline.py`，一键执行环境检查、后端测试/覆盖率、Ruff、Mypy、前端 lint/typecheck/build，并生成忽略提交的本地报告。
+- `EVAL-01`：为 routing、RAG、hallucination、planning、quality gate、context compression 六类 Golden Dataset 增加统一 Pydantic schema 校验，并接入两个评测入口。缺字段、错误类型、非法阈值和重复 case ID 会在评测启动前失败。
+
+下一项按既定顺序推进 `EVAL-02`：补齐 Golden Dataset 的版本、来源、更新时间、研究目标等元数据，并让评测报告携带数据集版本，确保科研实验结果可追溯。每次只做一个小推进，完成验证后再提交；是否推送以当次用户指令为准。
+
 最近关键提交：
 
 ```text
-829e3b4 fix(rag): silence section splitter escape warning
-2e0dc14 test: isolate pytest integration harness
-ac30abb chore: add compose app healthcheck
-d6437dd chore: add docker healthcheck
-17f299b chore: ignore root tsconfig tsbuildinfo
-f81fe43 chore: ignore generated workflow artifact jpg
-8c9d10e chore: enforce frontend npm lock policy
+3e5b2d9 feat: validate golden evaluation schemas
+51284fe feat: add reproducible baseline report
+09ad072 feat: add local environment doctor
+798d493 docs: remove baseline markdown whitespace
+f5f8c23 docs: record new machine runtime baseline
+2c6b6d2 chore: pin local runtime versions
+686938e docs: add new machine setup checklist
+552b9cd docs: add project handoff guide
 ```
 
 写入本文档前，`master` 与 `origin/master` 同步，无未提交业务代码改动。换电脑时以远端 `origin/master` 最新提交为准。
@@ -41,20 +55,31 @@ f81fe43 chore: ignore generated workflow artifact jpg
 
 ### 2.1 克隆代码
 
-优先使用当前实际推送远端：
+已经在 Gitee 配置 SSH key 时，优先使用当前实际推送协议：
 
 ```bash
-git clone https://gitee.com/git_bai/work.git
+ssh -T git@gitee.com
+git clone git@gitee.com:git_bai/work.git
 cd work
 git status --short --branch
 ```
 
-如果要使用 GitHub 镜像：
+新电脑暂未配置 Gitee SSH key 时，可以先用 HTTPS：
+
+```bash
+git clone https://gitee.com/git_bai/work.git
+cd work
+```
+
+Gitee 克隆完成后，如需保留 GitHub 镜像远端：
 
 ```bash
 git remote add github git@github.com:Bai1623/GraphTutor-LangGraph-MultiAgent-System.git
 git fetch github
+git remote -v
 ```
+
+日常默认推送目标是 `origin`（Gitee）；不要在没有明确要求时把未同步的提交单独推到 GitHub。
 
 ### 2.2 准备后端环境
 
@@ -276,6 +301,14 @@ RAG：
 - `.env.example`：环境变量模板。
 - `frontend/.env.example`：前端环境变量模板。
 
+评测与工程基线：
+
+- `src/evaluation/golden_dataset.py`：六类 Golden Dataset 的严格 schema、阈值和 case ID 校验。
+- `scripts/run_eval.py`：routing、RAG、hallucination、planning、quality gate 统一评测入口。
+- `scripts/run_compression_harness.py`：上下文压缩离线/在线评测入口。
+- `scripts/project_doctor.py`：新电脑环境自检，不输出密钥值。
+- `scripts/run_baseline.py`：可复现的全量离线工程基线。
+
 测试：
 
 - `tests/test_integration.py` 是手动 live integration harness，不是普通 pytest 单测。
@@ -360,6 +393,14 @@ SSE 事件：
 
 ## 6. 验证命令
 
+换机后优先运行一键基线：
+
+```bash
+python -m uv run python scripts/run_baseline.py
+```
+
+该命令依次执行环境 doctor、后端测试与覆盖率、Ruff、Mypy、前端 lint/typecheck/build。报告写入被 Git 忽略的 `artifacts/baseline/`。
+
 后端单测：
 
 ```bash
@@ -416,15 +457,18 @@ python -m tests.test_integration --quick
 最近一次本地验证记录：
 
 ```text
-.venv/bin/python -m pytest
-516 passed, 1 skipped, 2 warnings
-
-.venv/bin/python -m pytest tests/test_section_splitter.py
-19 passed
-
-.venv/bin/python -m ruff check src/rag/section_splitter.py
-All checks passed
+基线日期：2026-08-31
+业务代码基线：3e5b2d9
+完整基线：7/7 steps passed
+后端：532 passed, 1 skipped, 2 warnings
+覆盖率：78.93%（门槛 70%）
+Ruff：通过
+Mypy：54 source files 无错误
+前端 lint/typecheck/build：通过
+Golden Dataset：6/6 schema 校验通过
 ```
+
+基线 warning 仍包括 `langchain-community` sunset、Starlette/httpx deprecation、用户目录额外 `package-lock.json` 导致的 Next workspace root 推断提示。这些不是本轮失败，但应在后续依赖治理中处理。
 
 ## 7. CI 当前规则
 
@@ -535,23 +579,34 @@ import "./.next/types/routes.d.ts";
 
 换机后看不到这些目录是正常的。
 
-## 10. 后续建议
+## 10. 后续推进顺序
 
-优先级较高：
+下一台电脑首先完成环境闭环：
 
-1. 在真实新电脑上按本交接文档完整跑一遍：后端启动、前端启动、登录、学术问答、规划 HIL、上传解析。
-2. 用 Docker 环境验证 `docker compose up -d`，当前本机之前没有 Docker 命令，未做本地 Docker 实测。
-3. 完善 `docs/context_compression.md` 中提到的 artifact 恢复工具：按 `artifact_id`、题号、页码恢复完整内容。
-4. 如果要部署公网，必须修改 `AUTH_PASSWORD`、生成强 `AUTH_SECRET`，并设置 `AUTH_COOKIE_SECURE=true`。
-5. 如果多实例部署，rate limiter 和 quota 应迁移到 Redis 或 PostgreSQL。
+1. 克隆 Gitee `master`，运行 `scripts/project_doctor.py`。
+2. 从安全渠道恢复 `.env`，构建 `chroma_store/`。
+3. 运行 `scripts/run_baseline.py`，确认离线基线没有因换机变化。
+4. 实测后端、前端、登录、学术问答、规划 HIL 和上传解析。
+5. 如有 Docker，补做 `docker compose up -d` 的本机验证。
 
-中期改进：
+环境闭环后按综合型科研工程路线继续：
 
-1. 处理外部依赖 deprecation warning：`langchain-community` 迁移、Starlette/httpx 测试客户端更新。
-2. 为 `/stream` 和 `/resume` 的真实浏览器路径补一个 E2E 测试。
-3. 为 `error` SSE 事件补单独测试。
-4. 给 Docker Compose 增加 `.env` 缺失时的友好提示。
-5. 增加按节点的读时投影：`build_node_context(state, node_name)`，避免每个节点看到过多上下文。
+1. `EVAL-02`：Golden Dataset 元数据与版本追踪，评测报告记录数据版本。
+2. `EVAL-03`：数据分布和覆盖率报告，按 subject、difficulty、query type 等维度暴露空白。
+3. `EVAL-04`：离线回归门禁，把不依赖密钥的 schema/静态评测接入 CI。
+4. `EXP-01`：实验配置快照和随机种子，保证消融实验可复现。
+5. `EXP-02`：统一实验结果目录和对比报告，支持 baseline/variant 横向比较。
+6. `OBS-01`：完善 token、延迟、重试、fallback、工具轮次等成本指标的实验聚合。
+7. `ENG-01`：处理外部依赖 deprecation warning 和 Next workspace root 警告。
+8. `E2E-01`：为 `/stream`、`/resume`、上传解析增加真实浏览器路径回归。
+
+其他已知工程建议：
+
+- 完善 `docs/context_compression.md` 中的 artifact 恢复工具，支持按 `artifact_id`、题号、页码恢复完整内容。
+- 公网部署前修改 `AUTH_PASSWORD`、生成强 `AUTH_SECRET`，并设置 `AUTH_COOKIE_SECURE=true`。
+- 多实例部署时将 rate limiter 和 quota 迁移到 Redis 或 PostgreSQL。
+- 给 Docker Compose 增加 `.env` 缺失时的友好提示。
+- 增加按节点的读时投影 `build_node_context(state, node_name)`，减少无关上下文。
 
 暂不建议：
 
@@ -563,24 +618,28 @@ import "./.next/types/routes.d.ts";
 
 ```bash
 # 1. 克隆并进入仓库
-git clone https://gitee.com/git_bai/work.git
+git clone git@gitee.com:git_bai/work.git
 cd work
+git status --short --branch
 
 # 2. 后端依赖
 python -m pip install uv
 python -m uv sync --extra dev --locked --python 3.11
 
-# 3. 环境变量
+# 3. 无密钥环境检查
+python -m uv run python scripts/project_doctor.py
+
+# 4. 环境变量
 cp .env.example .env
 # 编辑 .env，填入 DEEPSEEK_API_KEY / SILICONFLOW_API_KEY / AUTH_SECRET 等
 
-# 4. 构建索引
+# 5. 构建索引
 python -m uv run python scripts/build_index.py
 
-# 5. 后端测试
-OTEL_TRACING_ENABLED=false python -m uv run pytest
+# 6. 完整离线基线
+python -m uv run python scripts/run_baseline.py
 
-# 6. 启动后端
+# 7. 启动后端
 python -m uv run python -m uvicorn app:app --host 127.0.0.1 --port 8002
 ```
 
@@ -588,6 +647,7 @@ python -m uv run python -m uvicorn app:app --host 127.0.0.1 --port 8002
 
 ```bash
 cd frontend
+nvm use
 npm ci
 echo "NEXT_PUBLIC_API_URL=http://localhost:8002" > .env
 npm run dev
