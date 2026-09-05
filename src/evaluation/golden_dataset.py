@@ -21,6 +21,24 @@ class _GoldenCase(_GoldenSchema):
     id: str = Field(min_length=1)
 
 
+class _GoldenMetadata(_GoldenSchema):
+    """Identity and provenance metadata shared by every golden dataset."""
+
+    dataset_name: str = Field(min_length=1)
+    version: str = Field(
+        min_length=5,
+        pattern=r"^v\d+\.\d+\.\d+$",
+        description="Semantic dataset version, for example v1.0.0.",
+    )
+    source: str = Field(min_length=1)
+    updated_at: str = Field(
+        min_length=10,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="UTC calendar date in ISO-8601 form.",
+    )
+    research_goal: str = Field(min_length=1)
+
+
 class _RoutingCase(_GoldenCase):
     query: str = Field(min_length=1)
     expected_intent: Literal["academic", "planning", "emotional", "unknown"]
@@ -131,6 +149,7 @@ class _CompressionThresholds(_GoldenSchema):
 class _SuiteSchema(_GoldenSchema):
     suite: str = Field(min_length=1)
     description: str = Field(min_length=1)
+    metadata: _GoldenMetadata
 
 
 class _RoutingSuite(_SuiteSchema):

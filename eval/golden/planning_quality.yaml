@@ -1,6 +1,12 @@
 suite: planning_quality
 kind: planning
 description: End-to-end planning branch convergence and output quality suite.
+metadata:
+  dataset_name: planning_quality
+  version: v1.0.0
+  source: Manually curated Chinese student planning requests.
+  updated_at: "2026-09-05"
+  research_goal: Measure planning branch routing, convergence rounds, and minimum useful draft quality.
 defaults:
   delay_s: 1.0
   timeout_s: 120

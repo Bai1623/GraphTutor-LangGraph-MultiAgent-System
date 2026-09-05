@@ -17,6 +17,8 @@ def test_loads_rag_golden_suite() -> None:
     assert suite["kind"] == "rag"
     assert suite["cases"]
     assert "thresholds" in suite
+    assert suite["metadata"]["version"] == "v1.0.0"
+    assert suite["metadata"]["research_goal"]
 
 
 def test_loads_hallucination_and_quality_gate_suites() -> None:
@@ -43,6 +45,12 @@ def test_load_suite_rejects_missing_kind_specific_field(tmp_path: Path) -> None:
 suite: routing
 kind: routing
 description: Invalid routing fixture.
+metadata:
+  dataset_name: fixture
+  version: v1.0.0
+  source: test fixture
+  updated_at: "2026-09-05"
+  research_goal: Validate schema behavior.
 thresholds:
   accuracy: 0.9
 cases:
@@ -63,6 +71,12 @@ def test_load_suite_rejects_duplicate_case_ids(tmp_path: Path) -> None:
 suite: routing
 kind: routing
 description: Invalid routing fixture.
+metadata:
+  dataset_name: fixture
+  version: v1.0.0
+  source: test fixture
+  updated_at: "2026-09-05"
+  research_goal: Validate schema behavior.
 thresholds:
   accuracy: 0.9
 cases:
@@ -87,6 +101,12 @@ def test_load_suite_rejects_missing_required_threshold(tmp_path: Path) -> None:
 suite: routing
 kind: routing
 description: Invalid routing fixture.
+metadata:
+  dataset_name: fixture
+  version: v1.0.0
+  source: test fixture
+  updated_at: "2026-09-05"
+  research_goal: Validate schema behavior.
 thresholds:
   unrelated_metric: 0.9
 cases:
@@ -108,6 +128,12 @@ def test_load_suite_rejects_coerced_boolean(tmp_path: Path) -> None:
 suite: hallucination
 kind: hallucination
 description: Invalid hallucination fixture.
+metadata:
+  dataset_name: fixture
+  version: v1.0.0
+  source: test fixture
+  updated_at: "2026-09-05"
+  research_goal: Validate schema behavior.
 defaults:
   timeout_s: 60
 thresholds:
@@ -139,6 +165,12 @@ suite: invalid
 kind:
   - routing
 description: Invalid discriminator fixture.
+metadata:
+  dataset_name: fixture
+  version: v1.0.0
+  source: test fixture
+  updated_at: "2026-09-05"
+  research_goal: Validate schema behavior.
 thresholds:
   accuracy: 0.9
 cases: []
@@ -148,6 +180,52 @@ cases: []
 
     with pytest.raises(ValueError, match="schema name must be a string"):
         run_eval.load_suite(str(path))
+
+
+def test_load_suite_rejects_invalid_dataset_metadata(tmp_path: Path) -> None:
+    path = tmp_path / "invalid-metadata.yaml"
+    path.write_text(
+        """
+suite: routing
+kind: routing
+description: Invalid metadata fixture.
+metadata:
+  dataset_name: routing
+  version: 1.0
+  source: hand-written
+  updated_at: 2026-09-05
+  research_goal: Validate routing.
+thresholds:
+  accuracy: 0.9
+cases:
+  - id: valid_case
+    query: 帮我制定复习计划
+    expected_intent: planning
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"metadata\.version"):
+        run_eval.load_suite(str(path))
+
+
+def test_base_result_and_markdown_include_dataset_version() -> None:
+    suite = {
+        "suite": "routing",
+        "kind": "routing",
+        "description": "Test suite.",
+        "metadata": {
+            "dataset_name": "routing-fixture",
+            "version": "v2.1.0",
+        },
+        "_path": "routing.yaml",
+    }
+
+    result = run_eval._base_result(suite, {"accuracy": 1.0}, [])
+
+    assert result["dataset"]["version"] == "v2.1.0"
+    markdown = run_eval.render_markdown(result)
+    assert "Dataset version: `v2.1.0`" in markdown
 
 
 def test_threshold_results_support_min_max_and_default_minimum() -> None:

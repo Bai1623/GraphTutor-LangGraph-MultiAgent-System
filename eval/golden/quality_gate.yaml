@@ -1,6 +1,12 @@
 suite: quality_gate
 kind: quality_gate
 description: Fixed release gate for core Agent/RAG quality signals.
+metadata:
+  dataset_name: core_quality_gate
+  version: v1.0.0
+  source: Release policy aggregating the routing, RAG, and hallucination golden datasets.
+  updated_at: "2026-09-05"
+  research_goal: Define reproducible release thresholds for the core Agent and RAG quality signals.
 sub_suites:
   - routing
   - rag

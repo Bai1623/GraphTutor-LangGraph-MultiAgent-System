@@ -1,6 +1,12 @@
 suite: rag_retrieval
 kind: rag
 description: RAG retrieval quality across Chinese exam papers, Math knowledge points, and English knowledge points.
+metadata:
+  dataset_name: rag_retrieval
+  version: v1.0.0
+  source: Manually curated knowledge-base retrieval queries derived from tracked Gaokao materials.
+  updated_at: "2026-09-05"
+  research_goal: Measure hybrid retrieval recall, ranking quality, and source hit rate across subjects and query types.
 defaults:
   top_k: 5
 thresholds:

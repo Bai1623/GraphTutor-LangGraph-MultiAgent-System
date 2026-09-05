@@ -1,6 +1,12 @@
 suite: hallucination
 kind: hallucination
 description: Golden cases for answer faithfulness evaluation against retrieved context.
+metadata:
+  dataset_name: answer_faithfulness
+  version: v1.0.0
+  source: Manually constructed faithful and unsupported-answer cases with curated evidence contexts.
+  updated_at: "2026-09-05"
+  research_goal: Measure whether generated answers stay faithful to retrieved evidence and reject unsupported claims.
 defaults:
   timeout_s: 60
 thresholds:

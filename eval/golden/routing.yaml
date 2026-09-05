@@ -1,6 +1,12 @@
 suite: routing
 kind: routing
 description: Supervisor intent routing smoke suite.
+metadata:
+  dataset_name: supervisor_routing
+  version: v1.0.0
+  source: Manually curated Chinese Gaokao tutoring queries.
+  updated_at: "2026-09-05"
+  research_goal: Measure Supervisor intent and subject routing accuracy across core user intents.
 thresholds:
   accuracy: 0.90
 cases:

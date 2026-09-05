@@ -33,8 +33,9 @@
 - `BASE-03`：增加 `scripts/project_doctor.py`，可在不输出密钥内容的前提下检查运行时、锁文件、知识数据、密钥状态和向量索引。
 - `BASE-04`：增加 `scripts/run_baseline.py`，一键执行环境检查、后端测试/覆盖率、Ruff、Mypy、前端 lint/typecheck/build，并生成忽略提交的本地报告。
 - `EVAL-01`：为 routing、RAG、hallucination、planning、quality gate、context compression 六类 Golden Dataset 增加统一 Pydantic schema 校验，并接入两个评测入口。缺字段、错误类型、非法阈值和重复 case ID 会在评测启动前失败。
+- `EVAL-02`：为六类 Golden Dataset 增加数据集名称、语义化版本、来源、更新时间和研究目标；评测 JSON/Markdown 报告同步记录完整元数据，并补充版本约定文档和回归测试。
 
-下一项按既定顺序推进 `EVAL-02`：补齐 Golden Dataset 的版本、来源、更新时间、研究目标等元数据，并让评测报告携带数据集版本，确保科研实验结果可追溯。每次只做一个小推进，完成验证后再提交；是否推送以当次用户指令为准。
+下一项按既定顺序推进 `EVAL-03`：增加 Golden Dataset 数据分布和覆盖率报告，按 subject、difficulty、query type 等维度暴露样本空白。每次只做一个小推进，完成验证后再提交；是否推送以当次用户指令为准。
 
 最近关键提交：
 
@@ -591,14 +592,13 @@ import "./.next/types/routes.d.ts";
 
 环境闭环后按综合型科研工程路线继续：
 
-1. `EVAL-02`：Golden Dataset 元数据与版本追踪，评测报告记录数据版本。
-2. `EVAL-03`：数据分布和覆盖率报告，按 subject、difficulty、query type 等维度暴露空白。
-3. `EVAL-04`：离线回归门禁，把不依赖密钥的 schema/静态评测接入 CI。
-4. `EXP-01`：实验配置快照和随机种子，保证消融实验可复现。
-5. `EXP-02`：统一实验结果目录和对比报告，支持 baseline/variant 横向比较。
-6. `OBS-01`：完善 token、延迟、重试、fallback、工具轮次等成本指标的实验聚合。
-7. `ENG-01`：处理外部依赖 deprecation warning 和 Next workspace root 警告。
-8. `E2E-01`：为 `/stream`、`/resume`、上传解析增加真实浏览器路径回归。
+1. `EVAL-03`：数据分布和覆盖率报告，按 subject、difficulty、query type 等维度暴露空白。
+2. `EVAL-04`：离线回归门禁，把不依赖密钥的 schema/静态评测接入 CI。
+3. `EXP-01`：实验配置快照和随机种子，保证消融实验可复现。
+4. `EXP-02`：统一实验结果目录和对比报告，支持 baseline/variant 横向比较。
+5. `OBS-01`：完善 token、延迟、重试、fallback、工具轮次等成本指标的实验聚合。
+6. `ENG-01`：处理外部依赖 deprecation warning 和 Next workspace root 警告。
+7. `E2E-01`：为 `/stream`、`/resume`、上传解析增加真实浏览器路径回归。
 
 其他已知工程建议：
 

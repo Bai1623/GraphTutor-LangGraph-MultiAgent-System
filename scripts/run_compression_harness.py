@@ -125,6 +125,8 @@ def _render_markdown(report: dict[str, Any]) -> str:
         "# Context Compression Harness Report",
         "",
         f"- Suite: `{report['suite']}`",
+        f"- Dataset: `{report.get('dataset', {}).get('dataset_name', 'unknown')}`",
+        f"- Dataset version: `{report.get('dataset', {}).get('version', 'unknown')}`",
         f"- Mode: `{report['mode']}`",
         f"- Total: {report['summary']['total']}",
         f"- Passed: {report['summary']['passed']}",
@@ -173,6 +175,7 @@ async def _run(args: argparse.Namespace) -> int:
     ]
     report = {
         "suite": suite.get("suite", suite_path.stem),
+        "dataset": suite.get("metadata", {}),
         "mode": "live_llm" if args.use_llm else "offline_static_episode",
         "thresholds": thresholds,
         "summary": _summary(results),
