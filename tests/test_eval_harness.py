@@ -228,6 +228,33 @@ def test_base_result_and_markdown_include_dataset_version() -> None:
     assert "Dataset version: `v2.1.0`" in markdown
 
 
+def test_dataset_coverage_reports_distributions_and_missing_labels() -> None:
+    suite = {
+        "suite": "routing",
+        "kind": "routing",
+        "cases": [
+            {
+                "expected_intent": "academic",
+                "expected_subject": "math",
+            },
+            {
+                "expected_intent": "planning",
+                "expected_subject": None,
+            },
+        ],
+    }
+
+    coverage = run_eval.summarize_dataset_coverage(suite)
+
+    assert coverage["total_cases"] == 2
+    assert coverage["coverage_rate"] == 0.75
+    assert coverage["dimensions"]["expected_intent"]["distribution"] == {
+        "academic": 1,
+        "planning": 1,
+    }
+    assert coverage["dimensions"]["expected_subject"]["missing_cases"] == 1
+
+
 def test_threshold_results_support_min_max_and_default_minimum() -> None:
     metrics = {
         "accuracy": 0.95,

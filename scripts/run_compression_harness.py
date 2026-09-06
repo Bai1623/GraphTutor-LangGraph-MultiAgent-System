@@ -18,7 +18,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.evaluation.golden_dataset import load_golden_suite
+from src.evaluation.golden_dataset import (
+    load_golden_suite,
+    summarize_dataset_coverage,
+)
 from src.memory.artifacts import ContextArtifactStore
 from src.memory.compression_harness import (
     episode_from_case,
@@ -133,6 +136,26 @@ def _render_markdown(report: dict[str, Any]) -> str:
         f"- Failed: {report['summary']['failed']}",
         f"- Pass rate: {report['summary']['pass_rate']}",
         "",
+        "## Dataset Coverage",
+        "",
+        f"- Total cases: {report.get('dataset_coverage', {}).get('total_cases', 0)}",
+        f"- Coverage rate: {report.get('dataset_coverage', {}).get('coverage_rate', 'n/a')}",
+        "",
+        "| Dimension | Cases | Covered | Missing | Distribution |",
+        "|---|---:|---:|---:|---|",
+        *[
+            "| {field} | {total} | {covered} | {missing} | {distribution} |".format(
+                field=field,
+                total=dimension.get("total_cases", 0),
+                covered=dimension.get("covered_cases", 0),
+                missing=dimension.get("missing_cases", 0),
+                distribution=dimension.get("distribution", {}),
+            )
+            for field, dimension in (
+                report.get("dataset_coverage", {}).get("dimensions", {}) or {}
+            ).items()
+        ],
+        "",
         "## Averages",
         "",
         "| Metric | Value |",
@@ -176,6 +199,7 @@ async def _run(args: argparse.Namespace) -> int:
     report = {
         "suite": suite.get("suite", suite_path.stem),
         "dataset": suite.get("metadata", {}),
+        "dataset_coverage": summarize_dataset_coverage(suite),
         "mode": "live_llm" if args.use_llm else "offline_static_episode",
         "thresholds": thresholds,
         "summary": _summary(results),

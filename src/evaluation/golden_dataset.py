@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -19,6 +20,7 @@ _NonNegativeNumber = Annotated[int | float, Field(ge=0)]
 
 class _GoldenCase(_GoldenSchema):
     id: str = Field(min_length=1)
+    dimensions: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
 
 
 class _GoldenMetadata(_GoldenSchema):
@@ -204,6 +206,66 @@ _SCHEMAS: dict[str, type[BaseModel]] = {
     "quality_gate": _QualityGateSuite,
     "context_compression": _CompressionSuite,
 }
+
+
+_COVERAGE_FIELDS: dict[str, tuple[str, ...]] = {
+    "routing": ("expected_intent", "expected_subject"),
+    "rag": ("subject", "topic", "query_type", "difficulty"),
+    "hallucination": ("category", "expected_hallucination"),
+    "planning": (
+        "dimensions.subject_scope",
+        "dimensions.time_horizon",
+        "dimensions.learner_profile",
+        "dimensions.time_constraint",
+    ),
+    "context_compression": (
+        "dimensions.branch",
+        "dimensions.artifact_kind",
+        "dimensions.scenario",
+    ),
+}
+
+
+def _case_field(case: dict[str, Any], field: str) -> Any:
+    value: Any = case
+    for part in field.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(part)
+    return value
+
+
+def summarize_dataset_coverage(suite: dict[str, Any]) -> dict[str, Any]:
+    """Summarize label coverage before a golden suite is evaluated."""
+    cases = suite.get("cases", [])
+    kind = str(suite.get("kind") or suite.get("suite") or "")
+    fields = _COVERAGE_FIELDS.get(kind, ())
+    dimensions: dict[str, dict[str, Any]] = {}
+    total_values = len(cases) * len(fields)
+    populated_values = 0
+
+    for field in fields:
+        values = [_case_field(case, field) for case in cases]
+        present = [value for value in values if value is not None and value != ""]
+        populated_values += len(present)
+        counts = Counter(
+            str(value).lower() if isinstance(value, bool) else str(value)
+            for value in present
+        )
+        dimensions[field] = {
+            "total_cases": len(cases),
+            "covered_cases": len(present),
+            "missing_cases": len(cases) - len(present),
+            "unique_values": len(counts),
+            "distribution": dict(sorted(counts.items())),
+        }
+
+    return {
+        "total_cases": len(cases),
+        "dimension_count": len(fields),
+        "coverage_rate": round(populated_values / total_values, 3) if total_values else 0,
+        "dimensions": dimensions,
+    }
 
 
 def _format_validation_error(error: ValidationError) -> str:

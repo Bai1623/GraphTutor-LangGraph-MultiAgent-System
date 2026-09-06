@@ -18,13 +18,43 @@ thresholds:
 cases:
   - id: planning_three_month_math
     query: 帮我制定一个三个月的数学复习计划
+    dimensions:
+      subject_scope: single_subject
+      time_horizon: three_months
+      learner_profile: regular_student
+      time_constraint: null
   - id: planning_sixty_days_mixed_level
     query: 我数学很差英语还行，帮我规划一下高考前60天的复习
+    dimensions:
+      subject_scope: mixed_subjects
+      time_horizon: sixty_days
+      learner_profile: uneven_foundation
+      time_constraint: null
   - id: planning_two_month_all_subjects
     query: 距离高考还有两个月，怎么安排各科复习时间
+    dimensions:
+      subject_scope: all_subjects
+      time_horizon: two_months
+      learner_profile: regular_student
+      time_constraint: null
   - id: planning_limited_daily_time
     query: 我每天只有3小时学习时间，怎么高效安排
+    dimensions:
+      subject_scope: null
+      time_horizon: null
+      learner_profile: regular_student
+      time_constraint: limited_daily_time
   - id: planning_art_student
     query: 我是艺考生，文化课落下很多，怎么安排复习
+    dimensions:
+      subject_scope: all_subjects
+      time_horizon: null
+      learner_profile: art_student
+      time_constraint: null
   - id: planning_weekend
     query: 周末两天怎么利用，帮我做一个周末强化计划
+    dimensions:
+      subject_scope: null
+      time_horizon: weekend
+      learner_profile: regular_student
+      time_constraint: weekend_only

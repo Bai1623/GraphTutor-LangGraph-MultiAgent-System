@@ -14,6 +14,10 @@ thresholds:
 
 cases:
   - id: uploaded_exam_followup
+    dimensions:
+      branch: academic
+      artifact_kind: document_parse
+      scenario: uploaded_exam_followup
     artifacts:
       - artifact_id: ctx_compression_exam_math_001
         kind: document_parse
@@ -106,6 +110,10 @@ cases:
           source_message_ids: ["h2"]
 
   - id: planning_policy_constraints
+    dimensions:
+      branch: planning
+      artifact_kind: official_policy_result
+      scenario: policy_constrained_planning
     artifacts:
       - artifact_id: ctx_compression_policy_gd_001
         kind: official_policy_result

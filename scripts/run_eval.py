@@ -15,7 +15,7 @@ import asyncio
 import json
 import sys
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -33,7 +33,7 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "artifacts" / "eval"
 sys.path.insert(0, str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env")
 
-from src.evaluation.golden_dataset import load_golden_suite
+from src.evaluation.golden_dataset import load_golden_suite, summarize_dataset_coverage
 
 SUITE_FILES = {
     "gate": "quality_gate.yaml",
@@ -672,6 +672,16 @@ def _quality_gate_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
         {"cost_latency": result.get("metrics", {}).get("cost_latency", {})}
         for result in results
     ])
+    metrics["dataset_coverage"] = {
+        "total_cases": sum(
+            result.get("dataset_coverage", {}).get("total_cases", 0)
+            for result in results
+        ),
+        "suites": {
+            result["suite"]: result.get("dataset_coverage", {})
+            for result in results
+        },
+    }
     return metrics
 
 
@@ -687,6 +697,7 @@ async def run_quality_gate_suite(suite: dict[str, Any]) -> dict[str, Any]:
             "id": result["suite"],
             "kind": result["kind"],
             "passed": bool(result.get("passed")),
+            "dataset_coverage": result.get("dataset_coverage", {}),
             "metrics": result.get("metrics", {}),
             "thresholds": result.get("thresholds", []),
         })
@@ -697,6 +708,8 @@ async def run_quality_gate_suite(suite: dict[str, Any]) -> dict[str, Any]:
 
 
 def _base_result(suite: dict[str, Any], metrics: dict[str, Any], details: list[dict[str, Any]]) -> dict[str, Any]:
+    metrics = dict(metrics)
+    metrics.setdefault("dataset_coverage", summarize_dataset_coverage(suite))
     return {
         "suite": suite["suite"],
         "kind": suite["kind"],
@@ -758,6 +771,35 @@ def render_markdown(result: dict[str, Any]) -> str:
             lines.extend(["", "### Node Latency", "", "| Node | Latency ms |", "| --- | ---: |"])
             for node, latency in node_latency.items():
                 lines.append(f"| {node} | {latency} |")
+
+    coverage = result["metrics"].get("dataset_coverage")
+    if isinstance(coverage, dict) and coverage:
+        lines.extend([
+            "", "## Dataset Coverage", "",
+            f"- Total cases: {coverage.get('total_cases', 0)}",
+            f"- Coverage rate: {coverage.get('coverage_rate', 'n/a')}",
+            "",
+            "| Dimension | Cases | Covered | Missing | Unique values | Distribution |",
+            "| --- | ---: | ---: | ---: | ---: | --- |",
+        ])
+        dimension_rows = coverage.get("dimensions", {})
+        if isinstance(dimension_rows, dict):
+            for field, dimension in dimension_rows.items():
+                distribution = dimension.get("distribution", {})
+                lines.append(
+                    f"| {field} | {dimension.get('total_cases', 0)} | "
+                    f"{dimension.get('covered_cases', 0)} | "
+                    f"{dimension.get('missing_cases', 0)} | "
+                    f"{dimension.get('unique_values', 0)} | {distribution} |"
+                )
+        suite_rows = coverage.get("suites", {})
+        if isinstance(suite_rows, dict) and suite_rows:
+            lines.extend(["", "### Quality Gate Suites", "", "| Suite | Cases | Coverage |", "| --- | ---: | ---: |"])
+            for suite_name, suite_coverage in suite_rows.items():
+                lines.append(
+                    f"| {suite_name} | {suite_coverage.get('total_cases', 0)} | "
+                    f"{suite_coverage.get('coverage_rate', 'n/a')} |"
+                )
 
     breakdown = result["metrics"].get("breakdown")
     if isinstance(breakdown, dict) and breakdown:
