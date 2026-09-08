@@ -593,7 +593,7 @@ import "./.next/types/routes.d.ts";
 环境闭环后按综合型科研工程路线继续：
 
 1. `EVAL-03`：数据分布和覆盖率报告，按 subject、difficulty、query type 等维度暴露空白。
-2. `EVAL-04`：离线回归门禁，把不依赖密钥的 schema/静态评测接入 CI。
+2. `EVAL-04`：离线回归门禁，把不依赖密钥的 Golden Dataset schema 校验和静态评测接入 CI。已完成：`scripts/validate_golden_datasets.py` 会逐个加载 `eval/golden/*.yaml`，CI 的 `golden-dataset-gate` job 会执行校验和 `tests/test_eval_harness.py`。
 3. `EXP-01`：实验配置快照和随机种子，保证消融实验可复现。
 4. `EXP-02`：统一实验结果目录和对比报告，支持 baseline/variant 横向比较。
 5. `OBS-01`：完善 token、延迟、重试、fallback、工具轮次等成本指标的实验聚合。

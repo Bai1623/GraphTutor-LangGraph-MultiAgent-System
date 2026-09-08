@@ -678,7 +678,9 @@ def _quality_gate_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
             for result in results
         ),
         "suites": {
-            result["suite"]: result.get("dataset_coverage", {})
+            # Unit-level callers may provide the historical ``id`` field.
+            # Keep the report stable for both direct and nested evaluations.
+            result.get("suite", result.get("id", "unknown")): result.get("dataset_coverage", {})
             for result in results
         },
     }

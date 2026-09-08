@@ -404,6 +404,15 @@ cd frontend && npm run build
 
 RAG golden 评测集人工从 `data/chinese/`、`data/math/`、`data/english/` 的高考语文试卷、数学知识点、英语知识点资料中构建，覆盖精确试卷召回、章节召回、宽泛主题检索、概念/公式/方法/模板/策略检索等查询类型。`scripts/run_eval.py --suite rag` 会输出整体 Recall@K、Precision@K、MRR、Hit Rate、平均延迟，并按 `subject`、`topic`、`query_type`、`difficulty` 生成 breakdown，便于发现具体薄弱维度。`scripts/run_eval.py --suite hallucination` 会用 golden 上下文与回答样例校验 `evaluate_hallucination` 对忠实回答和编造回答的判别能力。
 
+提交前可先运行不依赖 API 密钥的 Golden Dataset 校验：
+
+```bash
+python -m uv run python scripts/validate_golden_datasets.py
+python -m uv run pytest tests/test_eval_harness.py -q --tb=short
+```
+
+这两项也由 CI 的 `golden-dataset-gate` job 执行：前者检查每个 YAML 的 schema、元数据、阈值和 case ID，后者回归评测 harness 的加载、覆盖率和阈值逻辑。这样数据集格式错误会在进入在线评测前被发现。
+
 评测 JSON 和 Markdown 报告会额外输出 `cost_latency`，包含 `total_tokens`、`node_tokens`、`wall_time_ms`、`node_latency_ms`、`fallback_used`、`tool_rounds`、`retry_count`、`adv_round` 等字段，用于量化 RAG、reranker、Web search 和 Agent tool loop 的成本与延迟变化。
 
 ---
