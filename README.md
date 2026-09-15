@@ -415,6 +415,8 @@ python -m uv run pytest tests/test_eval_harness.py -q --tb=short
 
 评测 JSON 和 Markdown 报告会额外输出 `cost_latency`，包含 `total_tokens`、`node_tokens`、`wall_time_ms`、`node_latency_ms`、`fallback_used`、`tool_rounds`、`retry_count`、`adv_round` 等字段，用于量化 RAG、reranker、Web search 和 Agent tool loop 的成本与延迟变化。
 
+评测支持 `--seed` 参数（默认 `42`）。报告会保存 Git commit、Python 版本、运行平台和 `config/` 文件哈希，方便复现和比较不同实验配置；敏感环境变量不会写入报告。
+
 ---
 
 ## 许可证

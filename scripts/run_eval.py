@@ -33,6 +33,7 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "artifacts" / "eval"
 sys.path.insert(0, str(PROJECT_ROOT))
 load_dotenv(PROJECT_ROOT / ".env")
 
+from src.evaluation.experiment import build_snapshot, seed_everything
 from src.evaluation.golden_dataset import load_golden_suite, summarize_dataset_coverage
 
 SUITE_FILES = {
@@ -731,6 +732,8 @@ def render_markdown(result: dict[str, Any]) -> str:
         f"- Kind: `{result['kind']}`",
         f"- Dataset: `{result.get('dataset', {}).get('dataset_name', 'unknown')}`",
         f"- Dataset version: `{result.get('dataset', {}).get('version', 'unknown')}`",
+        f"- Git commit: `{result.get('experiment', {}).get('git_commit', 'unknown')}`",
+        f"- Random seed: `{result.get('experiment', {}).get('seed', 'unknown')}`",
         f"- Generated: {result['generated_at']}",
         f"- Golden: `{result.get('golden_path')}`",
         f"- Passed: {'yes' if result.get('passed') else 'no'}",
@@ -891,7 +894,15 @@ async def main() -> int:
         action="store_true",
         help="Always exit 0 even when thresholds fail",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed recorded in the report (default: 42)",
+    )
     args = parser.parse_args()
+    seed_everything(args.seed)
+    experiment = build_snapshot(PROJECT_ROOT, args.seed)
 
     suite_names = (
         ["rag", "routing", "hallucination", "planning"]
@@ -905,6 +916,7 @@ async def main() -> int:
     results = []
     for suite_name in suite_names:
         result = await run_suite(suite_name)
+        result["experiment"] = experiment
         json_path, md_path = _resolve_output_paths(args.output, result["suite"])
         json_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         md_path.write_text(render_markdown(result), encoding="utf-8")
