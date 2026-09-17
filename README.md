@@ -417,6 +417,16 @@ python -m uv run pytest tests/test_eval_harness.py -q --tb=short
 
 评测支持 `--seed` 参数（默认 `42`）。报告会保存 Git commit、Python 版本、运行平台和 `config/` 文件哈希，方便复现和比较不同实验配置；敏感环境变量不会写入报告。
 
+两份同一数据集版本的评测结果可以横向比较：
+
+```bash
+python -m uv run python scripts/compare_eval_reports.py \
+  --baseline artifacts/eval/baseline.json \
+  --variant artifacts/eval/variant.json
+```
+
+对比结果统一写入 `artifacts/experiments/`，同时生成 JSON 和 Markdown；报告中的 `delta` 定义为 `variant - baseline`，如果 suite 或数据集版本不一致会直接拒绝比较。
+
 ---
 
 ## 许可证

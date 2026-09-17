@@ -595,7 +595,7 @@ import "./.next/types/routes.d.ts";
 1. `EVAL-03`：数据分布和覆盖率报告，按 subject、difficulty、query type 等维度暴露空白。
 2. `EVAL-04`：离线回归门禁，把不依赖密钥的 Golden Dataset schema 校验和静态评测接入 CI。已完成：`scripts/validate_golden_datasets.py` 会逐个加载 `eval/golden/*.yaml`，CI 的 `golden-dataset-gate` job 会执行校验和 `tests/test_eval_harness.py`。
 3. `EXP-01`：实验配置快照和随机种子，保证消融实验可复现。已完成：`scripts/run_eval.py --seed 42` 会把 seed、Git commit、Python 版本、平台和 `config/` 文件 SHA-256 写入 JSON 报告，并在 Markdown 报告中展示 commit 和 seed；不会读取或记录 `.env`。
-4. `EXP-02`：统一实验结果目录和对比报告，支持 baseline/variant 横向比较。
+4. `EXP-02`：统一实验结果目录和对比报告，支持 baseline/variant 横向比较。已完成：`scripts/compare_eval_reports.py` 校验 suite/数据集版本后递归比较数值指标，输出到 `artifacts/experiments/`，并生成 JSON/Markdown 两种报告。
 5. `OBS-01`：完善 token、延迟、重试、fallback、工具轮次等成本指标的实验聚合。
 6. `ENG-01`：处理外部依赖 deprecation warning 和 Next workspace root 警告。
 7. `E2E-01`：为 `/stream`、`/resume`、上传解析增加真实浏览器路径回归。
