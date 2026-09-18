@@ -427,6 +427,14 @@ python -m uv run python scripts/compare_eval_reports.py \
 
 对比结果统一写入 `artifacts/experiments/`，同时生成 JSON 和 Markdown；报告中的 `delta` 定义为 `variant - baseline`，如果 suite 或数据集版本不一致会直接拒绝比较。
 
+多次评测结果可以聚合成本和延迟：
+
+```bash
+python -m uv run python scripts/aggregate_eval_costs.py --input artifacts/eval
+```
+
+聚合报告按 suite 输出 token、总耗时、平均耗时、P95、重试次数、工具轮次和 fallback rate，结果写入 `artifacts/experiments/`。
+
 ---
 
 ## 许可证
