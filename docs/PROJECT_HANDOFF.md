@@ -469,7 +469,7 @@ Mypy：54 source files 无错误
 Golden Dataset：6/6 schema 校验通过
 ```
 
-基线 warning 仍包括 `langchain-community` sunset、Starlette/httpx deprecation、用户目录额外 `package-lock.json` 导致的 Next workspace root 推断提示。这些不是本轮失败，但应在后续依赖治理中处理。
+基线 warning 仍包括 `langchain-community` sunset 和 Starlette/httpx deprecation。Next workspace root 推断提示已通过 `frontend/next.config.mjs` 显式设置 `turbopack.root` 与 `outputFileTracingRoot` 处理；后续仍需关注上游依赖迁移。
 
 ## 7. CI 当前规则
 
@@ -597,7 +597,7 @@ import "./.next/types/routes.d.ts";
 3. `EXP-01`：实验配置快照和随机种子，保证消融实验可复现。已完成：`scripts/run_eval.py --seed 42` 会把 seed、Git commit、Python 版本、平台和 `config/` 文件 SHA-256 写入 JSON 报告，并在 Markdown 报告中展示 commit 和 seed；不会读取或记录 `.env`。
 4. `EXP-02`：统一实验结果目录和对比报告，支持 baseline/variant 横向比较。已完成：`scripts/compare_eval_reports.py` 校验 suite/数据集版本后递归比较数值指标，输出到 `artifacts/experiments/`，并生成 JSON/Markdown 两种报告。
 5. `OBS-01`：完善 token、延迟、重试、fallback、工具轮次等成本指标的实验聚合。已完成：`scripts/aggregate_eval_costs.py` 按 suite 聚合多份评测 JSON，输出 total/average/P95 和 fallback rate 到 `artifacts/experiments/`。
-6. `ENG-01`：处理外部依赖 deprecation warning 和 Next workspace root 警告。
+6. `ENG-01`：处理外部依赖 deprecation warning 和 Next workspace root 警告。已完成：Next 配置显式锁定 `frontend/` 为 Turbopack 和 standalone tracing 根目录；剩余 `langchain-community`、Starlette/httpx warning 需要后续依赖迁移。
 7. `E2E-01`：为 `/stream`、`/resume`、上传解析增加真实浏览器路径回归。
 
 其他已知工程建议：

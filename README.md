@@ -435,6 +435,8 @@ python -m uv run python scripts/aggregate_eval_costs.py --input artifacts/eval
 
 聚合报告按 suite 输出 token、总耗时、平均耗时、P95、重试次数、工具轮次和 fallback rate，结果写入 `artifacts/experiments/`。
 
+前端 `frontend/next.config.mjs` 显式设置了 `turbopack.root` 和 `outputFileTracingRoot`，确保 Next 在用户目录存在其他 lockfile 时仍以 `frontend/` 作为 workspace 和 standalone tracing 根目录。
+
 ---
 
 ## 许可证
