@@ -437,6 +437,14 @@ python -m uv run python scripts/aggregate_eval_costs.py --input artifacts/eval
 
 前端 `frontend/next.config.mjs` 显式设置了 `turbopack.root` 和 `outputFileTracingRoot`，确保 Next 在用户目录存在其他 lockfile 时仍以 `frontend/` 作为 workspace 和 standalone tracing 根目录。
 
+HTTP 入口的离线 contract smoke 可运行：
+
+```bash
+python -m uv run pytest tests/test_e2e_contract.py -q --tb=short
+```
+
+该测试真实请求 `/stream`、`/resume` 和 `/documents/parse`，只替换模型/解析器实现，不需要 API key；它验证 SSE 响应和上传任务状态，浏览器 Playwright 回归仍待后续补充。
+
 ---
 
 ## 许可证
