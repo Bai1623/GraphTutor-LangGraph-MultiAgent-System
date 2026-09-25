@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@dagrejs/dagre": "^3.0.0",
@@ -27,15 +28,16 @@
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.51.1",
     "@tailwindcss/postcss": "^4.2.0",
     "@types/node": "^22",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "autoprefixer": "^10.4.20",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "16.1.6",
     "postcss": "^8.5",
     "tailwindcss": "^4.2.0",
-    "typescript": "5.7.3",
-    "eslint": "^9.39.1",
-    "eslint-config-next": "16.1.6"
+    "typescript": "5.7.3"
   }
 }

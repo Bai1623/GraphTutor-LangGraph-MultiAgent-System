@@ -443,7 +443,17 @@ HTTP 入口的离线 contract smoke 可运行：
 python -m uv run pytest tests/test_e2e_contract.py -q --tb=short
 ```
 
-该测试真实请求 `/stream`、`/resume` 和 `/documents/parse`，只替换模型/解析器实现，不需要 API key；它验证 SSE 响应和上传任务状态，浏览器 Playwright 回归仍待后续补充。
+该测试真实请求 `/stream`、`/resume` 和 `/documents/parse`，只替换模型/解析器实现，不需要 API key；它验证 SSE 响应和上传任务状态。
+
+前端浏览器 smoke 使用 Playwright 验证登录、提问和 SSE 答案渲染：
+
+```bash
+cd frontend
+npx playwright install chromium
+npm run test:e2e
+```
+
+浏览器测试通过网络拦截提供确定性的 API/SSE 响应，因此无需启动真实后端或配置模型密钥，并已接入 CI 的 `frontend-build` job。
 
 ---
 

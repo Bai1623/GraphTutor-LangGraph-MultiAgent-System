@@ -598,7 +598,7 @@ import "./.next/types/routes.d.ts";
 4. `EXP-02`：统一实验结果目录和对比报告，支持 baseline/variant 横向比较。已完成：`scripts/compare_eval_reports.py` 校验 suite/数据集版本后递归比较数值指标，输出到 `artifacts/experiments/`，并生成 JSON/Markdown 两种报告。
 5. `OBS-01`：完善 token、延迟、重试、fallback、工具轮次等成本指标的实验聚合。已完成：`scripts/aggregate_eval_costs.py` 按 suite 聚合多份评测 JSON，输出 total/average/P95 和 fallback rate 到 `artifacts/experiments/`。
 6. `ENG-01`：处理外部依赖 deprecation warning 和 Next workspace root 警告。已完成：Next 配置显式锁定 `frontend/` 为 Turbopack 和 standalone tracing 根目录；剩余 `langchain-community`、Starlette/httpx warning 需要后续依赖迁移。
-7. `E2E-01`：为 `/stream`、`/resume`、上传解析增加真实浏览器路径回归。已完成第一步：`tests/test_e2e_contract.py` 通过 TestClient 验证真实 HTTP 路由、SSE 响应头/payload 和上传异步任务状态；后续再补 Playwright 浏览器层回归。
+7. `E2E-01`：为 `/stream`、`/resume`、上传解析增加真实浏览器路径回归。已完成：`tests/test_e2e_contract.py` 验证真实 HTTP 路由、SSE 响应和上传任务状态；`frontend/e2e/chat-flow.spec.ts` 使用 Playwright 验证浏览器登录、提问和 SSE 答案渲染，并已接入 CI。后续可继续补 HIL 和上传控件的浏览器用例。
 
 其他已知工程建议：
 

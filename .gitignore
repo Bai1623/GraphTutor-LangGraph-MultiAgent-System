@@ -58,6 +58,8 @@ frontend/dist/
 frontend/%TEMP%/
 frontend/*.tsbuildinfo
 frontend/tsconfig.tsbuildinfo
+frontend/playwright-report/
+frontend/test-results/
 tsconfig.tsbuildinfo
 frontend/eslint.config 2.mjs
 frontend/pnpm-lock.yaml
