@@ -156,7 +156,7 @@ python -m uv run python scripts/run_compression_harness.py --use-llm --output ar
 
 ## 后续改造建议
 
-1. 增加 artifact 恢复工具：按 `artifact_id`、题号、页码恢复完整内容。
+1. 已增加 artifact 恢复工具：`recover_context_artifact` 会校验 `artifact_id`，并可按题号或页码恢复有界内容；Academic Agent 可在预览不足时自主调用。
 2. 增加按节点的读时投影：`build_node_context(state, node_name)`。
 3. 对 Agent 工具循环结果也接入 `ContextArtifactStore`，避免 ToolMessage 撑爆上下文。
 4. 扩展 compression harness 的 live LLM 模式，引入真实回答对比或 judge 评分。

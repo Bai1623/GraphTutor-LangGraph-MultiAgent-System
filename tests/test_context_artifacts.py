@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage
 from src.graph import academic, planner
 from src.memory.artifacts import ContextArtifactStore, compact_with_artifact
 from src.tools import document_question_parser as parser
+from src.tools.agent_tools import recover_context_artifact
 
 
 def test_context_artifact_store_writes_payload_and_returns_preview(tmp_path):
@@ -46,6 +47,58 @@ def test_compact_with_artifact_replaces_content_with_preview(tmp_path):
     assert compact["artifact_id"].startswith("ctx_")
     assert len(compact["content"]) <= 60
     assert compact["full_content_chars"] == len(item["content"])
+
+
+def test_context_artifact_store_recovers_question_and_page(tmp_path):
+    store = ContextArtifactStore(tmp_path)
+    ref = store.put(
+        kind="document_parse",
+        payload={
+            "questions": [
+                {"number": "1", "stem": "第一题", "source_pages": [1]},
+                {"number": "2", "stem": "第二题", "source_pages": [2, 3]},
+            ],
+            "recognized_text": "完整试卷文本",
+        },
+    )
+
+    by_question = store.recover(ref.artifact_id, question_number="2")
+    by_page = store.recover(ref.artifact_id, page=1)
+
+    assert by_question is not None
+    assert by_question["matched_items"] == 1
+    assert "第二题" in by_question["content"]
+    assert by_page is not None
+    assert "第一题" in by_page["content"]
+
+
+def test_context_artifact_store_rejects_unsafe_id_and_bounds_content(tmp_path):
+    store = ContextArtifactStore(tmp_path)
+    ref = store.put(kind="tool_output", payload={"content": "长内容" * 100})
+
+    assert store.load("ctx_../../secrets") is None
+    recovered = store.recover(ref.artifact_id, max_chars=40)
+
+    assert recovered is not None
+    assert recovered["truncated"] is True
+    assert len(recovered["content"]) == 41
+
+
+def test_recover_context_artifact_tool_returns_selected_question(tmp_path):
+    store = ContextArtifactStore(tmp_path)
+    ref = store.put(
+        kind="document_parse",
+        payload={"questions": [{"number": "8", "stem": "求导数", "source_pages": [3]}]},
+    )
+
+    with patch("src.tools.agent_tools.get_context_artifact_store", return_value=store):
+        output = recover_context_artifact.invoke({
+            "artifact_id": ref.artifact_id,
+            "question_number": "8",
+        })
+
+    assert "求导数" in output
+    assert '"matched_items": 1' in output
 
 
 @pytest.mark.asyncio

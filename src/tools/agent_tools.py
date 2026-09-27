@@ -1,10 +1,10 @@
-"""Agent 工具定义 —— 为 Function Calling 准备的两把"自主查询"工具
+"""Agent 工具定义 —— 为 Function Calling 准备的检索与恢复工具
 
 与当前图节点的本质区别：
 - 图节点（rag_retrieve / web_search）：代码预定义调用时机，LLM 被动接受结果
 - Function Calling 工具：LLM 自主决定要不要调、什么时候调、用什么参数调
 
-这两个工具通过 @tool 装饰器暴露 name / description / args_schema，
+这些工具通过 @tool 装饰器暴露 name / description / args_schema，
 当被 bind_tools() 绑定到 LLM 时，LLM 会在推理过程中"意识到"自己
 可以调用这些工具来补充信息，从而从"被动接收上下文"升级为"主动按需查询"。
 
@@ -16,8 +16,11 @@
 
 from __future__ import annotations
 
+import json
+
 from langchain_core.tools import tool
 
+from src.memory.artifacts import get_context_artifact_store
 from src.rag.retriever import retrieve
 from src.tools.search_tool import search as web_search_fn
 
@@ -67,3 +70,31 @@ def search_web(query: str) -> str:
             f"{r.get('content', '')}"
         )
     return "\n\n".join(parts)
+
+
+@tool
+def recover_context_artifact(
+    artifact_id: str,
+    question_number: str = "",
+    page: int | None = None,
+) -> str:
+    """按需恢复此前压缩保存的完整上下文 artifact。
+
+    当提示词中出现 artifact_id，且预览不足以回答问题时使用。可以指定题号或
+    页码缩小范围；不要在已有预览足够时调用，也不要猜测 artifact_id。
+
+    参数:
+        artifact_id: 以 ctx_ 开头的可恢复引用。
+        question_number: 可选题号，例如 "12" 或 "2（1）"。
+        page: 可选原始页码，从 1 开始。
+    """
+    recovered = get_context_artifact_store().recover(
+        artifact_id,
+        question_number=question_number or None,
+        page=page,
+    )
+    if recovered is None:
+        return "未找到该 artifact，或 artifact_id 格式无效。"
+    if recovered.get("matched_items") == 0:
+        return "artifact 存在，但没有找到符合指定题号或页码的内容。"
+    return json.dumps(recovered, ensure_ascii=False)

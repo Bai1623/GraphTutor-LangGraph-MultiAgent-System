@@ -42,7 +42,7 @@ from src.graph.state import CONTEXT_CLEAR, TutorState
 from src.memory.artifacts import compact_with_artifact
 from src.memory.context_builder import build_memory_context
 from src.rag.retriever import retrieve
-from src.tools.agent_tools import search_knowledge_base, search_web
+from src.tools.agent_tools import recover_context_artifact, search_knowledge_base, search_web
 from src.tools.search_tool import search as web_search_fn
 from src.tracing import traced_llm_call, traced_node, traced_retrieval, traced_search
 from src.tracing.metrics import record_rag_retrieval
@@ -423,8 +423,8 @@ def _format_search(results: list[dict]) -> str:
 # Agent 工具配置 —— 为 Function Calling 准备
 # ============================================================================
 
-# 工具列表：LLM 在生成过程中可以自主调用的两把"查询工具"
-_TOOLS = [search_knowledge_base, search_web]
+# 工具列表：LLM 可自主搜索知识库、查询网络或恢复已有 artifact
+_TOOLS = [search_knowledge_base, search_web, recover_context_artifact]
 _TOOL_BY_NAME = {t.name: t for t in _TOOLS}
 _MAX_TOOL_ROUNDS = get_setting("academic.max_tool_rounds", 3)
 

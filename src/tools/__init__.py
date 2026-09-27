@@ -19,6 +19,7 @@ __all__ = [
     "search",
     "search_knowledge_base",
     "search_web",
+    "recover_context_artifact",
 ]
 
 
@@ -31,11 +32,16 @@ def __getattr__(name: str) -> Any:
         from src.tools.search_tool import get_search_tool, search
 
         return {"get_search_tool": get_search_tool, "search": search}[name]
-    if name in {"search_knowledge_base", "search_web"}:
-        from src.tools.agent_tools import search_knowledge_base, search_web
+    if name in {"search_knowledge_base", "search_web", "recover_context_artifact"}:
+        from src.tools.agent_tools import (
+            recover_context_artifact,
+            search_knowledge_base,
+            search_web,
+        )
 
         return {
             "search_knowledge_base": search_knowledge_base,
             "search_web": search_web,
+            "recover_context_artifact": recover_context_artifact,
         }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

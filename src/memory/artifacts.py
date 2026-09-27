@@ -8,6 +8,7 @@ references that can safely remain in state, summaries, and eval traces.
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,6 +18,8 @@ from pydantic import BaseModel, Field
 
 _STORE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "context_artifacts"
 _DEFAULT_PREVIEW_CHARS = 800
+_DEFAULT_RECOVERY_CHARS = 6000
+_ARTIFACT_ID_PATTERN = re.compile(r"^ctx_[A-Za-z0-9_-]{8,128}$")
 
 
 class ContextArtifactRef(BaseModel):
@@ -102,12 +105,60 @@ class ContextArtifactStore:
         )
 
     def load(self, artifact_id: str) -> dict[str, Any] | None:
+        if not _ARTIFACT_ID_PATTERN.fullmatch(artifact_id):
+            return None
         for path in self.root.glob(f"**/{artifact_id}.json"):
             try:
                 return json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 return None
         return None
+
+    def recover(
+        self,
+        artifact_id: str,
+        *,
+        question_number: str | None = None,
+        page: int | None = None,
+        max_chars: int = _DEFAULT_RECOVERY_CHARS,
+    ) -> dict[str, Any] | None:
+        """Recover a bounded payload, optionally narrowed by question or source page."""
+        body = self.load(artifact_id)
+        if body is None:
+            return None
+        payload = body.get("payload")
+        selected = payload
+        selector: dict[str, Any] = {}
+
+        questions = payload.get("questions", []) if isinstance(payload, dict) else []
+        if question_number:
+            normalized = question_number.strip()
+            selector["question_number"] = normalized
+            selected = [
+                item
+                for item in questions
+                if str(item.get("number", "")).strip() == normalized
+            ]
+        elif page is not None:
+            selector["page"] = page
+            selected = [
+                item
+                for item in questions
+                if page in (item.get("source_pages") or [])
+            ]
+
+        text = _coerce_text(selected)
+        truncated = len(text) > max_chars
+        content = text[:max_chars].rstrip() + ("…" if truncated else "")
+        return {
+            "artifact_id": artifact_id,
+            "kind": body.get("kind", "unknown"),
+            "selector": selector,
+            "content": content,
+            "matched_items": len(selected) if isinstance(selected, list) else None,
+            "truncated": truncated,
+            "full_chars": len(text),
+        }
 
 
 def get_context_artifact_store() -> ContextArtifactStore:
