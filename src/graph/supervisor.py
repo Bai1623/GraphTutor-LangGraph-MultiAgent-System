@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from src.config import get_setting, load_prompt
 from src.graph.llm import get_node_llm
 from src.graph.state import TutorState
-from src.memory.context_builder import build_memory_context
+from src.memory.context_builder import build_node_context
 from src.tracing import traced_llm_call, traced_node
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ async def supervisor_node(state: TutorState) -> dict:
     user_text = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
 
     # —— 加载长期记忆：首次对话时从 MemoryStore 读取 ——
-    memory_context = build_memory_context(state)
+    memory_context = build_node_context(state, "supervisor")
     memory_section = f"\n\n{memory_context}" if memory_context else ""
     if memory_context:
         logger.info("Memory loaded: %d chars for this user", len(memory_context))

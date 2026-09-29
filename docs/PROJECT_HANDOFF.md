@@ -606,7 +606,7 @@ import "./.next/types/routes.d.ts";
 - 公网部署前修改 `AUTH_PASSWORD`、生成强 `AUTH_SECRET`，并设置 `AUTH_COOKIE_SECURE=true`。
 - 多实例部署时将 rate limiter 和 quota 迁移到 Redis 或 PostgreSQL。
 - 给 Docker Compose 增加 `.env` 缺失时的友好提示。
-- 增加按节点的读时投影 `build_node_context(state, node_name)`，减少无关上下文。
+- 按节点的读时投影已完成：Supervisor、情绪支持、计划起草和学术回答分别使用字段白名单，未知节点与旧版自由文本摘要保留兼容回退。
 
 暂不建议：
 

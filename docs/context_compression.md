@@ -154,9 +154,20 @@ python -m uv run python scripts/run_compression_harness.py --use-llm --output ar
 - 上传试卷后继续追问知识点。
 - 志愿规划中保留官方政策 artifact 和预算/公办约束。
 
+## 按节点读取上下文
+
+新增 `build_node_context(state, node_name)` 读时投影层，并接入 Supervisor、情绪支持、计划起草和学术回答节点。每个节点通过字段白名单只读取完成职责所需的摘要：
+
+- Supervisor 读取任务、学生基本画像、薄弱点和待处理事项，不读取文档正文引用。
+- 情绪支持读取学生状态、学习偏好和约束，不读取题目与 artifact。
+- 计划起草读取目标、成绩、约束、结论和学习进展，不读取文档 artifact。
+- 学术回答读取题目、知识进展及可恢复 artifact，不读取无关情绪状态。
+
+长期记忆仍按召回结果注入。未注册节点默认使用完整压缩记忆；历史自由文本摘要无法可靠拆分时也完整保留，避免兼容升级造成信息丢失。
+
 ## 后续改造建议
 
 1. 已增加 artifact 恢复工具：`recover_context_artifact` 会校验 `artifact_id`，并可按题号或页码恢复有界内容；Academic Agent 可在预览不足时自主调用。
-2. 增加按节点的读时投影：`build_node_context(state, node_name)`。
+2. 已增加按节点的读时投影：`build_node_context(state, node_name)`，四个提示词消费节点已使用字段白名单。
 3. 对 Agent 工具循环结果也接入 `ContextArtifactStore`，避免 ToolMessage 撑爆上下文。
 4. 扩展 compression harness 的 live LLM 模式，引入真实回答对比或 judge 评分。

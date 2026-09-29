@@ -20,7 +20,7 @@ from src.memory.compressor import (
     SessionTask,
     compress_conversation,
 )
-from src.memory.context_builder import build_memory_context
+from src.memory.context_builder import build_memory_context, build_node_context
 
 
 def _long_history(turns: int = 8) -> list:
@@ -191,3 +191,60 @@ def test_build_memory_context_includes_extended_session_fields():
     assert "先思路后步骤" in context
     assert "ctx_test_exam_002" in context
     assert "函数零点" in context
+
+
+def test_build_node_context_projects_sections_by_consumer():
+    episode = SessionEpisode(
+        task=SessionTask(intent="academic", subject="math", topic="导数"),
+        gaokao_state=GaokaoLearningState(
+            province="广东",
+            target_score="数学120分",
+            weak_points=[AnchoredItem(text="导数零点")],
+            study_preferences=[AnchoredItem(text="先思路后步骤")],
+        ),
+        artifact_refs=[
+            ArtifactReference(
+                artifact_id="ctx_projection_001",
+                kind="document_parse",
+                preview="第17题",
+            )
+        ],
+        current_questions=[
+            CurrentQuestion(
+                number="17",
+                subject="math",
+                stem_preview="函数零点",
+                artifact_id="ctx_projection_001",
+            )
+        ],
+        student_state=[AnchoredItem(text="最近有些焦虑")],
+        constraints=[AnchoredItem(text="每天最多学习两小时")],
+        knowledge_progress=[AnchoredItem(text="已掌握单调性")],
+    )
+    state = {
+        "long_term_memory": "[长期记忆]\n- 喜欢例题驱动",
+        "session_summary": episode.model_dump_json(),
+    }
+
+    emotional = build_node_context(state, "emotional_response")
+    assert "最近有些焦虑" in emotional
+    assert "先思路后步骤" in emotional
+    assert "ctx_projection_001" not in emotional
+    assert "已掌握单调性" not in emotional
+
+    academic = build_node_context(state, "generate_answer")
+    assert "ctx_projection_001" in academic
+    assert "函数零点" in academic
+    assert "已掌握单调性" in academic
+    assert "最近有些焦虑" not in academic
+
+    assert build_node_context(state, "unregistered_node") == build_memory_context(state)
+
+
+def test_build_node_context_keeps_legacy_free_text_summary():
+    context = build_node_context(
+        {"session_summary": "旧版摘要：学生希望先讲基础。"},
+        "generate_answer",
+    )
+
+    assert "旧版摘要：学生希望先讲基础。" in context
