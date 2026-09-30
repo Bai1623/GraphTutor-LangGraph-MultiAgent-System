@@ -603,6 +603,7 @@ import "./.next/types/routes.d.ts";
 其他已知工程建议：
 
 - Artifact 按需恢复已完成：`recover_context_artifact` 支持按 `artifact_id`、题号、页码恢复，并限制单次返回长度；后续可扩展页级原文切片和访问审计。
+- Agent 工具大结果已落盘：Academic Agent 的长搜索结果会保存为 `agent_tool_result` artifact，并在 ToolMessage 中只保留预览和引用；后续可增加 artifact 访问审计与自动清理策略。
 - 公网部署前修改 `AUTH_PASSWORD`、生成强 `AUTH_SECRET`，并设置 `AUTH_COOKIE_SECURE=true`。
 - 多实例部署时将 rate limiter 和 quota 迁移到 Redis 或 PostgreSQL。
 - 给 Docker Compose 增加 `.env` 缺失时的友好提示。

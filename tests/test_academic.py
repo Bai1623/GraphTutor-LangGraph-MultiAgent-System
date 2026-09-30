@@ -8,6 +8,8 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from src.graph.academic import (
+    _TOOL_BY_NAME,
+    _execute_tool,
     _format_retrieved,
     _format_search,
     academic_router,
@@ -16,6 +18,7 @@ from src.graph.academic import (
     rewrite_query,
     web_search,
 )
+from src.memory.artifacts import ContextArtifactStore
 from src.graph.state import CONTEXT_CLEAR
 
 
@@ -294,3 +297,55 @@ class TestGenerateAnswer:
         result = await generate_answer(state)
 
         assert len(result["messages"]) == 1
+
+
+class TestAgentToolResultCompaction:
+    async def test_large_tool_result_is_saved_as_recoverable_artifact(self, tmp_path):
+        tool = MagicMock()
+        tool.invoke.return_value = "检索结果。" * 600
+        store = ContextArtifactStore(root=tmp_path)
+
+        with (
+            patch.dict(_TOOL_BY_NAME, {"search_knowledge_base": tool}),
+            patch("src.memory.artifacts.get_context_artifact_store", return_value=store),
+        ):
+            result = await _execute_tool(
+                {
+                    "name": "search_knowledge_base",
+                    "args": {"query": "导数单调性"},
+                }
+            )
+
+        assert "artifact_id: ctx_" in result
+        assert "完整结果已保存" in result
+        artifact_id = result.split("artifact_id: ", 1)[1].split(" ", 1)[0]
+        stored = store.load(artifact_id)
+        assert stored is not None
+        assert stored["kind"] == "agent_tool_result"
+        assert stored["payload"]["tool_name"] == "search_knowledge_base"
+        assert stored["payload"]["content"] == "检索结果。" * 600
+
+    async def test_small_tool_result_stays_inline(self):
+        tool = MagicMock()
+        tool.invoke.return_value = "知识库中未找到相关内容。"
+
+        with patch.dict(_TOOL_BY_NAME, {"search_knowledge_base": tool}):
+            result = await _execute_tool(
+                {"name": "search_knowledge_base", "args": {"query": "冷门问题"}}
+            )
+
+        assert result == "知识库中未找到相关内容。"
+
+    async def test_recovery_result_keeps_its_existing_bounded_content(self):
+        tool = MagicMock()
+        tool.invoke.return_value = "已恢复内容。" * 300
+
+        with patch.dict(_TOOL_BY_NAME, {"recover_context_artifact": tool}):
+            result = await _execute_tool(
+                {
+                    "name": "recover_context_artifact",
+                    "args": {"artifact_id": "ctx_existing_artifact"},
+                }
+            )
+
+        assert result == "已恢复内容。" * 300

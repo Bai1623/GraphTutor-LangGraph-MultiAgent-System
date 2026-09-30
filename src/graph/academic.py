@@ -427,6 +427,10 @@ def _format_search(results: list[dict]) -> str:
 _TOOLS = [search_knowledge_base, search_web, recover_context_artifact]
 _TOOL_BY_NAME = {t.name: t for t in _TOOLS}
 _MAX_TOOL_ROUNDS = get_setting("academic.max_tool_rounds", 3)
+_TOOL_RESULT_COMPACTION_THRESHOLD = get_setting(
+    "academic.tool_result_compaction_threshold", 1400,
+)
+_TOOL_RESULT_PREVIEW_CHARS = get_setting("academic.tool_result_preview_chars", 900)
 
 
 def _bind_tools_or_self(llm):
@@ -456,7 +460,37 @@ async def _execute_tool(tool_call: dict) -> str:
         return f"错误：未知工具 '{tool_name}'"
     try:
         result = await asyncio.to_thread(tool_fn.invoke, tool_args)
-        return str(result)
+        result_text = str(result)
+        if (
+            tool_name == recover_context_artifact.name
+            or len(result_text) <= _TOOL_RESULT_COMPACTION_THRESHOLD
+        ):
+            return result_text
+
+        compact = compact_with_artifact(
+            {
+                "tool_name": tool_name,
+                "tool_args": tool_args,
+                "content": result_text,
+            },
+            kind="agent_tool_result",
+            text_key="content",
+            preview_chars=_TOOL_RESULT_PREVIEW_CHARS,
+            metadata={"tool_name": tool_name, "tool_args": tool_args},
+        )
+        logger.info(
+            "Compacted agent tool result: tool=%s artifact=%s chars=%d",
+            tool_name,
+            compact["artifact_id"],
+            len(result_text),
+        )
+        return (
+            f"工具 {tool_name} 的完整结果已保存为可恢复 artifact。\n"
+            f"artifact_id: {compact['artifact_id']} "
+            f"(full_chars={compact['full_content_chars']})\n"
+            f"结果预览：\n{compact['content']}\n\n"
+            "若预览不足，请调用 recover_context_artifact 并传入该 artifact_id。"
+        )
     except Exception:
         logger.exception("Tool '%s' execution failed", tool_name)
         return f"工具 '{tool_name}' 调用失败，请基于已有信息继续回答。"

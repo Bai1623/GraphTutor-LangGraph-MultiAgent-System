@@ -165,9 +165,15 @@ python -m uv run python scripts/run_compression_harness.py --use-llm --output ar
 
 长期记忆仍按召回结果注入。未注册节点默认使用完整压缩记忆；历史自由文本摘要无法可靠拆分时也完整保留，避免兼容升级造成信息丢失。
 
+## Agent 工具结果瘦身
+
+Academic Agent 的 `search_knowledge_base` 和 `search_web` 工具结果超过 `academic.tool_result_compaction_threshold`（默认 1400 字符）时，会写入 `agent_tool_result` artifact。后续 `ToolMessage` 只保留预览、artifact id 和完整长度；模型需要细节时可继续调用 `recover_context_artifact`。
+
+短结果直接内联，避免无意义的磁盘写入；`recover_context_artifact` 的结果本身已经有最大恢复长度限制，因此不再次压缩，保证按需恢复真正能提供细节。
+
 ## 后续改造建议
 
 1. 已增加 artifact 恢复工具：`recover_context_artifact` 会校验 `artifact_id`，并可按题号或页码恢复有界内容；Academic Agent 可在预览不足时自主调用。
 2. 已增加按节点的读时投影：`build_node_context(state, node_name)`，四个提示词消费节点已使用字段白名单。
-3. 对 Agent 工具循环结果也接入 `ContextArtifactStore`，避免 ToolMessage 撑爆上下文。
+3. 已对 Agent 工具循环的大结果接入 `ContextArtifactStore`，短结果内联，恢复结果保留既有边界。
 4. 扩展 compression harness 的 live LLM 模式，引入真实回答对比或 judge 评分。

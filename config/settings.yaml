@@ -4,6 +4,8 @@
 academic:
   max_retries: 2                        # Hallucination retry loop limit
   search_timeout: 15                    # Web search timeout (seconds)
+  tool_result_compaction_threshold: 1400 # Persist larger Agent tool outputs
+  tool_result_preview_chars: 900         # Tool result chars kept in ToolMessage
   temperature: 0.7                      # Answer generation temperature
   hallucination_eval_temperature: 0.0   # Evaluation requires determinism
 
