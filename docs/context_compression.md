@@ -149,6 +149,14 @@ python -m uv run python scripts/run_compression_harness.py --output artifacts/ev
 python -m uv run python scripts/run_compression_harness.py --use-llm --output artifacts/eval
 ```
 
+如果还要比较压缩前后的真实回答质量，可显式开启：
+
+```bash
+python -m uv run python scripts/run_compression_harness.py --use-llm --compare-answers --output artifacts/eval
+```
+
+该模式会使用同一回答模型、`temperature=0` 分别基于原始上下文和压缩上下文作答，再由结构化 Judge 从事实一致性、约束遵循和可用性保持三个维度评分。`live_answer_quality` 低于阈值或 Judge 明确判定发生退化时，该 case 不通过。报告会保存两份回答和评分理由，便于人工复核。每个 case 会比普通 `--use-llm` 模式多 3 次模型调用，因此默认 CI 不启用。
+
 当前 golden case 覆盖：
 
 - 上传试卷后继续追问知识点。
@@ -176,4 +184,4 @@ Academic Agent 的 `search_knowledge_base` 和 `search_web` 工具结果超过 `
 1. 已增加 artifact 恢复工具：`recover_context_artifact` 会校验 `artifact_id`，并可按题号或页码恢复有界内容；Academic Agent 可在预览不足时自主调用。
 2. 已增加按节点的读时投影：`build_node_context(state, node_name)`，四个提示词消费节点已使用字段白名单。
 3. 已对 Agent 工具循环的大结果接入 `ContextArtifactStore`，短结果内联，恢复结果保留既有边界。
-4. 扩展 compression harness 的 live LLM 模式，引入真实回答对比或 judge 评分。
+4. 已扩展 compression harness 的 live LLM 模式：可生成压缩前后回答并由结构化 Judge 做质量退化评分。

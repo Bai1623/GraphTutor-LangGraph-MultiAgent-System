@@ -8,9 +8,83 @@ from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
 from src.memory.artifacts import ContextArtifactStore
 from src.memory.compressor import CompressionResult, SessionEpisode, estimate_message_tokens
+
+
+class LiveAnswerComparison(BaseModel):
+    """Structured judge result for answers generated before and after compaction."""
+
+    factual_consistency: float = Field(ge=0.0, le=1.0)
+    constraint_adherence: float = Field(ge=0.0, le=1.0)
+    usefulness_retention: float = Field(ge=0.0, le=1.0)
+    overall_score: float = Field(ge=0.0, le=1.0)
+    regression_detected: bool
+    reason: str
+
+
+def latest_human_question(messages: list[BaseMessage]) -> str:
+    """Return the latest user question shared by both comparison contexts."""
+    for message in reversed(messages):
+        if isinstance(message, HumanMessage):
+            return str(message.content)
+    return ""
+
+
+def answer_generation_messages(
+    *,
+    context_text: str,
+    question: str,
+) -> list[BaseMessage]:
+    """Build a deterministic answer-generation prompt for live comparison."""
+    return [
+        SystemMessage(
+            content=(
+                "你是高考辅导系统的评测回答器。只能依据提供的对话上下文回答，"
+                "必须遵守学生已经明确的约束，不得补充上下文之外的个人事实。"
+                "回答应简洁但足以完成当前请求。"
+            )
+        ),
+        HumanMessage(
+            content=f"对话上下文：\n{context_text}\n\n当前问题：\n{question}"
+        ),
+    ]
+
+
+def answer_judge_messages(
+    *,
+    question: str,
+    expected_constraints: list[str],
+    answer_terms: list[str],
+    baseline_answer: str,
+    compressed_answer: str,
+) -> list[BaseMessage]:
+    """Build a rubric prompt that measures degradation, not writing style."""
+    rubric = (
+        "事实一致性：压缩后回答是否保留基线回答中有上下文依据的关键信息；"
+        "约束遵循：是否保留用户硬约束；"
+        "可用性保持：是否仍能完成问题，而非仅复述摘要。"
+    )
+    return [
+        SystemMessage(
+            content=(
+                "你是独立评测员，需要比较同一问题在上下文压缩前后的两份回答。"
+                "只判断压缩后是否发生质量退化，不因措辞不同扣分。各分数范围为0到1。"
+            )
+        ),
+        HumanMessage(
+            content=(
+                f"评分标准：{rubric}\n"
+                f"当前问题：{question}\n"
+                f"必须保留的约束：{expected_constraints}\n"
+                f"回答关键项：{answer_terms}\n\n"
+                f"压缩前回答：\n{baseline_answer}\n\n"
+                f"压缩后回答：\n{compressed_answer}"
+            )
+        ),
+    ]
 
 
 def message_from_dict(raw: dict[str, Any]) -> BaseMessage:

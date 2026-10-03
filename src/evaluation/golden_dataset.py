@@ -146,6 +146,7 @@ class _CompressionThresholds(_GoldenSchema):
     constraint_retention: _Rate
     answer_consistency: _Rate
     artifact_recoverability: _Rate
+    live_answer_quality: _Rate = 0.8
 
 
 class _SuiteSchema(_GoldenSchema):

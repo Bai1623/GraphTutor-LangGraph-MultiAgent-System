@@ -24,12 +24,18 @@ from src.evaluation.golden_dataset import (
 )
 from src.memory.artifacts import ContextArtifactStore
 from src.memory.compression_harness import (
+    LiveAnswerComparison,
+    answer_generation_messages,
+    answer_judge_messages,
     episode_from_case,
     evaluate_compression_result,
+    latest_human_question,
     messages_from_case,
     result_from_static_episode,
+    text_from_messages,
 )
 from src.memory.compressor import compress_conversation
+from src.graph.llm import get_node_llm
 
 
 DEFAULT_SUITE = PROJECT_ROOT / "eval" / "golden" / "compression.yaml"
@@ -68,6 +74,7 @@ async def _run_case(
     thresholds: dict[str, float],
     store: ContextArtifactStore,
     use_llm: bool,
+    compare_answers: bool,
 ) -> dict[str, Any]:
     _write_case_artifacts(case, store)
     before_messages = messages_from_case(case.get("messages") or [])
@@ -97,9 +104,69 @@ async def _run_case(
         thresholds=thresholds,
         store=store,
     )
-    return {
+    case_result = {
         **metrics.to_dict(),
         "expected_artifact_ids": list(case.get("expected_artifact_ids") or []),
+        "live_answer_quality": None,
+        "live_answer_comparison": None,
+    }
+    if compare_answers:
+        comparison = await _compare_live_answers(
+            before_messages=before_messages,
+            after_messages=result.messages,
+            expected_constraints=list(case.get("expected_constraints") or []),
+            answer_terms=list(case.get("answer_terms") or []),
+        )
+        case_result["live_answer_quality"] = comparison["overall_score"]
+        case_result["live_answer_comparison"] = comparison
+        case_result["passed"] = case_result["passed"] and (
+            comparison["overall_score"]
+            >= thresholds.get("live_answer_quality", 0.8)
+        ) and not comparison["regression_detected"]
+    return case_result
+
+
+async def _compare_live_answers(
+    *,
+    before_messages: list,
+    after_messages: list,
+    expected_constraints: list[str],
+    answer_terms: list[str],
+) -> dict[str, Any]:
+    """Generate two deterministic answers and grade compaction regression."""
+    question = latest_human_question(before_messages)
+    answer_llm = get_node_llm("academic", temperature=0.0, streaming=False)
+    baseline_response = await answer_llm.ainvoke(
+        answer_generation_messages(
+            context_text=text_from_messages(before_messages),
+            question=question,
+        )
+    )
+    compressed_response = await answer_llm.ainvoke(
+        answer_generation_messages(
+            context_text=text_from_messages(after_messages),
+            question=question,
+        )
+    )
+    baseline_answer = str(baseline_response.content)
+    compressed_answer = str(compressed_response.content)
+
+    judge_llm = get_node_llm("academic", temperature=0.0, streaming=False)
+    structured_judge = judge_llm.with_structured_output(LiveAnswerComparison)
+    judgement = await structured_judge.ainvoke(
+        answer_judge_messages(
+            question=question,
+            expected_constraints=expected_constraints,
+            answer_terms=answer_terms,
+            baseline_answer=baseline_answer,
+            compressed_answer=compressed_answer,
+        )
+    )
+    return {
+        **judgement.model_dump(),
+        "question": question,
+        "baseline_answer": baseline_answer,
+        "compressed_answer": compressed_answer,
     }
 
 
@@ -114,6 +181,13 @@ def _summary(results: list[dict[str, Any]]) -> dict[str, Any]:
         "artifact_recoverability",
     ):
         avg[key] = round(sum(float(item[key]) for item in results) / max(total, 1), 4)
+    live_scores = [
+        float(item["live_answer_quality"])
+        for item in results
+        if item.get("live_answer_quality") is not None
+    ]
+    if live_scores:
+        avg["live_answer_quality"] = round(sum(live_scores) / len(live_scores), 4)
     return {
         "total": total,
         "passed": passed,
@@ -168,15 +242,51 @@ def _render_markdown(report: dict[str, Any]) -> str:
             "",
             "## Cases",
             "",
-            "| Case | Pass | Token reduction | Constraint retention | Answer consistency | Artifact recoverability |",
-            "|---|---:|---:|---:|---:|---:|",
+            "| Case | Pass | Token reduction | Constraint retention | Answer consistency | Artifact recoverability | Live answer quality |",
+            "|---|---:|---:|---:|---:|---:|---:|",
         ]
     )
     for item in report["cases"]:
+        live_answer_quality = item.get("live_answer_quality")
+        display_item = {
+            **item,
+            "live_answer_quality": (
+                live_answer_quality if live_answer_quality is not None else "n/a"
+            ),
+        }
         lines.append(
             "| {case_id} | {passed} | {token_reduction} | {constraint_retention} | "
-            "{answer_consistency} | {artifact_recoverability} |".format(**item)
+            "{answer_consistency} | {artifact_recoverability} | {live_answer_quality} |".format(
+                **display_item,
+            )
         )
+    comparisons = [item for item in report["cases"] if item.get("live_answer_comparison")]
+    if comparisons:
+        lines.extend(["", "## Live Answer Comparisons", ""])
+        for item in comparisons:
+            comparison = item["live_answer_comparison"]
+            lines.extend(
+                [
+                    f"### {item['case_id']}",
+                    "",
+                    f"- Overall score: {comparison['overall_score']}",
+                    f"- Regression detected: {comparison['regression_detected']}",
+                    f"- Reason: {comparison['reason']}",
+                    "",
+                    "#### Baseline answer",
+                    "",
+                    "````text",
+                    comparison["baseline_answer"],
+                    "````",
+                    "",
+                    "#### Compressed-context answer",
+                    "",
+                    "````text",
+                    comparison["compressed_answer"],
+                    "````",
+                    "",
+                ]
+            )
     return "\n".join(lines) + "\n"
 
 
@@ -193,6 +303,7 @@ async def _run(args: argparse.Namespace) -> int:
             thresholds=thresholds,
             store=store,
             use_llm=args.use_llm,
+            compare_answers=args.compare_answers,
         )
         for case in suite.get("cases") or []
     ]
@@ -200,7 +311,13 @@ async def _run(args: argparse.Namespace) -> int:
         "suite": suite.get("suite", suite_path.stem),
         "dataset": suite.get("metadata", {}),
         "dataset_coverage": summarize_dataset_coverage(suite),
-        "mode": "live_llm" if args.use_llm else "offline_static_episode",
+        "mode": (
+            "live_llm_answer_comparison"
+            if args.compare_answers
+            else "live_llm"
+            if args.use_llm
+            else "offline_static_episode"
+        ),
         "thresholds": thresholds,
         "summary": _summary(results),
         "cases": results,
@@ -228,7 +345,17 @@ def main() -> None:
         action="store_true",
         help="Call the real compressor LLM instead of using expected_episode fixtures.",
     )
+    parser.add_argument(
+        "--compare-answers",
+        action="store_true",
+        help=(
+            "Generate answers before/after compression and grade quality regression; "
+            "requires --use-llm and makes three extra LLM calls per case."
+        ),
+    )
     args = parser.parse_args()
+    if args.compare_answers and not args.use_llm:
+        parser.error("--compare-answers requires --use-llm")
     raise SystemExit(asyncio.run(_run(args)))
 
 

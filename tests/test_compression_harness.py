@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 import pytest
 
 from scripts import run_compression_harness
 from src.memory.artifacts import ContextArtifactStore
 from src.memory.compression_harness import (
+    LiveAnswerComparison,
+    answer_generation_messages,
+    answer_judge_messages,
     episode_from_case,
     evaluate_compression_result,
     messages_from_case,
@@ -123,3 +127,114 @@ cases:
 
     with pytest.raises(ValueError, match=r"cases\.0\.expected_episode"):
         run_compression_harness._load_suite(path)
+
+
+def test_live_answer_prompts_keep_question_and_rubric_terms():
+    generation = answer_generation_messages(
+        context_text="学生要求先讲思路",
+        question="第17题考什么？",
+    )
+    judge = answer_judge_messages(
+        question="第17题考什么？",
+        expected_constraints=["先讲思路"],
+        answer_terms=["导数", "函数零点"],
+        baseline_answer="涉及导数和函数零点。",
+        compressed_answer="先讲思路：涉及导数和函数零点。",
+    )
+
+    assert "学生要求先讲思路" in generation[-1].content
+    assert "第17题考什么" in generation[-1].content
+    assert "约束遵循" in judge[-1].content
+    assert "函数零点" in judge[-1].content
+
+
+@pytest.mark.asyncio
+async def test_compare_live_answers_returns_answers_and_structured_score():
+    answer_llm = MagicMock()
+    answer_llm.ainvoke = AsyncMock(
+        side_effect=[
+            AIMessage(content="基线回答：导数和函数零点。"),
+            AIMessage(content="压缩后回答：先讲思路，再讲导数和函数零点。"),
+        ]
+    )
+    structured_judge = MagicMock()
+    structured_judge.ainvoke = AsyncMock(
+        return_value=LiveAnswerComparison(
+            factual_consistency=1.0,
+            constraint_adherence=1.0,
+            usefulness_retention=0.9,
+            overall_score=0.95,
+            regression_detected=False,
+            reason="关键信息和回答约束均保留。",
+        )
+    )
+    judge_llm = MagicMock()
+    judge_llm.with_structured_output.return_value = structured_judge
+
+    messages = [HumanMessage(content="第17题考什么？")]
+    with patch(
+        "scripts.run_compression_harness.get_node_llm",
+        side_effect=[answer_llm, judge_llm],
+    ):
+        result = await run_compression_harness._compare_live_answers(
+            before_messages=messages,
+            after_messages=messages,
+            expected_constraints=["先讲思路"],
+            answer_terms=["导数", "函数零点"],
+        )
+
+    assert result["overall_score"] == 0.95
+    assert result["regression_detected"] is False
+    assert "基线回答" in result["baseline_answer"]
+    assert "压缩后回答" in result["compressed_answer"]
+    judge_llm.with_structured_output.assert_called_once_with(LiveAnswerComparison)
+
+
+@pytest.mark.asyncio
+async def test_live_judge_regression_fails_case_even_with_high_score(tmp_path):
+    case = {
+        "id": "judge_regression",
+        "messages": [
+            {"id": "h0", "role": "human", "content": "请记住必须先讲思路。"},
+            {"id": "h1", "role": "human", "content": "继续回答。"},
+        ],
+        "recent_message_count": 1,
+        "expected_constraints": ["先讲思路"],
+        "answer_terms": [],
+        "expected_artifact_ids": [],
+        "expected_episode": {
+            "constraints": [{"text": "必须先讲思路", "source_message_ids": ["h0"]}]
+        },
+    }
+    comparison = {
+        "factual_consistency": 1.0,
+        "constraint_adherence": 0.5,
+        "usefulness_retention": 1.0,
+        "overall_score": 0.9,
+        "regression_detected": True,
+        "reason": "压缩后回答没有先讲思路。",
+        "question": "继续回答。",
+        "baseline_answer": "先讲思路。",
+        "compressed_answer": "直接给答案。",
+    }
+
+    with patch(
+        "scripts.run_compression_harness._compare_live_answers",
+        new=AsyncMock(return_value=comparison),
+    ):
+        result = await run_compression_harness._run_case(
+            case,
+            thresholds={
+                "token_reduction": 0.0,
+                "constraint_retention": 1.0,
+                "answer_consistency": 1.0,
+                "artifact_recoverability": 1.0,
+                "live_answer_quality": 0.8,
+            },
+            store=ContextArtifactStore(tmp_path),
+            use_llm=False,
+            compare_answers=True,
+        )
+
+    assert result["live_answer_quality"] == 0.9
+    assert result["passed"] is False

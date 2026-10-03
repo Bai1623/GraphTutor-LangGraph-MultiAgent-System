@@ -2,15 +2,16 @@ suite: context_compression
 description: Conversation compression should keep constraints, Gaokao learning state, and recoverable artifact refs.
 metadata:
   dataset_name: context_compression
-  version: v1.0.0
+  version: v1.1.0
   source: Manually constructed multi-turn conversations with expected constraints and artifact references.
-  updated_at: "2026-09-05"
+  updated_at: "2026-10-03"
   research_goal: Measure context compression token savings while preserving constraints, answer consistency, and artifact recovery.
 thresholds:
   token_reduction: 0.20
   constraint_retention: 1.0
   answer_consistency: 0.85
   artifact_recoverability: 1.0
+  live_answer_quality: 0.80
 
 cases:
   - id: uploaded_exam_followup
