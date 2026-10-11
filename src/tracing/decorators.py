@@ -119,7 +119,9 @@ def traced_llm_call(
         if temperature is not None:
             span.set_attribute("llm.temperature", temperature)
 
-        start = time.monotonic()
+        # perf_counter has sub-millisecond resolution on Windows, while
+        # monotonic may advance in ~15 ms ticks on older Python runtimes.
+        start = time.perf_counter()
         error = False
         try:
             yield span
@@ -129,7 +131,7 @@ def traced_llm_call(
             span.record_exception(exc)
             raise
         finally:
-            latency_ms = (time.monotonic() - start) * 1000
+            latency_ms = (time.perf_counter() - start) * 1000
             span.set_attribute("llm.latency_ms", round(latency_ms, 2))
             fallback_used = bool(getattr(span, "_gaokao_fallback_used", False))
             record_llm_call(

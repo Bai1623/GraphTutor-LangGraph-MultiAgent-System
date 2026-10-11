@@ -59,6 +59,11 @@ def _effective_environment(
     return values
 
 
+def _portable_relative_path(path: Path, root: Path) -> str:
+    """Render project-relative paths consistently on Windows, macOS, and Linux."""
+    return path.relative_to(root).as_posix()
+
+
 def collect_checks(
     *,
     project_root: Path = PROJECT_ROOT,
@@ -94,7 +99,7 @@ def collect_checks(
         checks.append(CheckResult(
             name,
             "PASS" if path.is_file() else "FAIL",
-            str(path.relative_to(root)) if path.is_file() else "missing",
+            _portable_relative_path(path, root) if path.is_file() else "missing",
         ))
 
     subject_dirs = [root / "data" / subject for subject in ("math", "chinese", "english")]
@@ -126,7 +131,7 @@ def collect_checks(
     checks.append(CheckResult(
         "Vector index",
         "PASS" if index_path else "WARN",
-        str(index_path.relative_to(root)) if index_path else "not built",
+        _portable_relative_path(index_path, root) if index_path else "not built",
     ))
 
     return checks

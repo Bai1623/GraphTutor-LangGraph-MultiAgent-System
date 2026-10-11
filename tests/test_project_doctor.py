@@ -29,6 +29,7 @@ def test_collect_checks_redacts_environment_values(tmp_path: Path) -> None:
     )
     rendered = project_doctor.render_checks(checks)
 
+    assert "frontend/package-lock.json" in rendered
     assert "DEEPSEEK_API_KEY" in rendered
     assert secret not in rendered
     assert "SILICONFLOW_API_KEY" in rendered

@@ -605,6 +605,8 @@ import "./.next/types/routes.d.ts";
 - Artifact 按需恢复已完成：`recover_context_artifact` 支持按 `artifact_id`、题号、页码恢复，并限制单次返回长度；后续可扩展页级原文切片和访问审计。
 - Agent 工具大结果已落盘：Academic Agent 的长搜索结果会保存为 `agent_tool_result` artifact，并在 ToolMessage 中只保留预览和引用；后续可增加 artifact 访问审计与自动清理策略。
 - Compression harness 已支持 `--use-llm --compare-answers`：对压缩前后真实回答执行零温度生成和结构化 Judge 评分，低于阈值或明确退化即失败；默认离线 CI 不产生模型费用。
+- `project_doctor` 的项目相对路径统一使用 POSIX 风格展示，Windows 与 Linux/macOS 的自检输出和断言保持一致。
+- LLM 延迟埋点改用高精度 `time.perf_counter()`，避免 Windows 上短调用因 `monotonic()` 计时粒度被记录为 `0.0ms`。
 - 公网部署前修改 `AUTH_PASSWORD`、生成强 `AUTH_SECRET`，并设置 `AUTH_COOKIE_SECURE=true`。
 - 多实例部署时将 rate limiter 和 quota 迁移到 Redis 或 PostgreSQL。
 - 给 Docker Compose 增加 `.env` 缺失时的友好提示。
