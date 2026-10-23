@@ -102,3 +102,79 @@ test("user reviews a generated plan and sends feedback through HIL resume", asyn
   await expect(page.getByText("修订计划：周一复习数学，周三复习物理；每天不超过两小时。")).toBeVisible()
   await expect(page.getByText("学习计划草稿 — 请审阅")).toBeVisible()
 })
+
+test("user uploads an exam, waits for parsing, and sends the parsed question", async ({ page }) => {
+  await page.route("**/auth/me", async (route) => {
+    await route.fulfill({ status: 401, contentType: "application/json", body: '{"detail":"unauthorized"}' })
+  })
+  await page.route("**/auth/login", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: '{"ok":true}' })
+  })
+  await page.route("**/documents/parse", async (route) => {
+    expect(route.request().method()).toBe("POST")
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({
+        task_id: "upload-browser-e2e",
+        status_url: "/documents/tasks/upload-browser-e2e",
+        kind: "document_parse",
+      }),
+    })
+  })
+  await page.route("**/documents/tasks/upload-browser-e2e", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        task_id: "upload-browser-e2e",
+        status: "succeeded",
+        result: {
+          questions: [{ number: "17", subject: "math" }],
+          recognized_text: "第17题 函数零点",
+          query: "请讲解第17题",
+          filenames: ["exam.pdf"],
+          parser: "browser-e2e",
+          segmenter_used: false,
+          artifact_id: "ctx_browser_upload_001",
+          preview: "第17题 函数零点",
+          artifacts: [{ artifact_id: "ctx_browser_upload_001", kind: "document_parse" }],
+        },
+      }),
+    })
+  })
+  await page.route("**/stream", async (route) => {
+    expect(route.request().postDataJSON()).toMatchObject({ query: "请讲解第17题" })
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      headers: { "cache-control": "no-cache" },
+      body: [
+        'data: {"type":"thread_id","thread_id":"upload-browser-e2e"}',
+        "",
+        'data: {"type":"token","content":"第17题考查函数零点和导数。"}',
+        "",
+        'data: {"type":"done"}',
+        "",
+      ].join("\n"),
+    })
+  })
+
+  await page.goto("/")
+  await page.getByLabel("账号").fill("admin")
+  await page.getByLabel("密码").fill("123456")
+  await page.getByRole("button", { name: "登录" }).click()
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "exam.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4 browser e2e"),
+  })
+  await expect(page.getByText("exam.pdf")).toBeVisible()
+  await page.getByPlaceholder("输入你的问题...").fill("请讲解第17题")
+  await page.getByPlaceholder("输入你的问题...").press("Enter")
+
+  await expect(page.getByText("请讲解第17题").last()).toBeVisible()
+  await expect(page.getByText("附件：exam.pdf").first()).toBeVisible()
+  await expect(page.getByText("第17题考查函数零点和导数。")).toBeVisible()
+})
