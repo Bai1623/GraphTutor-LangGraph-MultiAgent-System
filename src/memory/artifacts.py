@@ -8,10 +8,12 @@ references that can safely remain in state, summaries, and eval traces.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -20,6 +22,8 @@ _STORE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "context_a
 _DEFAULT_PREVIEW_CHARS = 800
 _DEFAULT_RECOVERY_CHARS = 6000
 _ARTIFACT_ID_PATTERN = re.compile(r"^ctx_[A-Za-z0-9_-]{8,128}$")
+_AUDIT_LOCK = Lock()
+logger = logging.getLogger(__name__)
 
 
 class ContextArtifactRef(BaseModel):
@@ -66,8 +70,37 @@ def _stats_for_payload(payload: Any) -> dict[str, Any]:
 class ContextArtifactStore:
     """Small JSON store for recoverable context payloads."""
 
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(self, root: Path | None = None, *, audit_enabled: bool = True) -> None:
         self.root = root or _STORE_DIR
+        self.audit_enabled = audit_enabled
+        self.audit_path = self.root / "access_audit.jsonl"
+
+    def _record_access(
+        self,
+        *,
+        operation: str,
+        artifact_id: str,
+        outcome: str,
+        selector: dict[str, Any] | None = None,
+    ) -> None:
+        """Append metadata-only access records without persisting artifact text."""
+        if not self.audit_enabled:
+            return
+        entry: dict[str, Any] = {
+            "timestamp": _now(),
+            "operation": operation,
+            "artifact_id": artifact_id,
+            "outcome": outcome,
+        }
+        if selector:
+            entry["selector"] = selector
+        try:
+            self.root.mkdir(parents=True, exist_ok=True)
+            with _AUDIT_LOCK, self.audit_path.open("a", encoding="utf-8") as audit_file:
+                audit_file.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except OSError:
+            # Observability must not make an otherwise valid artifact unavailable.
+            logger.warning("Failed to write artifact access audit", exc_info=True)
 
     def put(
         self,
@@ -106,12 +139,33 @@ class ContextArtifactStore:
 
     def load(self, artifact_id: str) -> dict[str, Any] | None:
         if not _ARTIFACT_ID_PATTERN.fullmatch(artifact_id):
+            self._record_access(
+                operation="load",
+                artifact_id=artifact_id,
+                outcome="invalid_id",
+            )
             return None
         for path in self.root.glob(f"**/{artifact_id}.json"):
             try:
-                return json.loads(path.read_text(encoding="utf-8"))
+                body = json.loads(path.read_text(encoding="utf-8"))
+                self._record_access(
+                    operation="load",
+                    artifact_id=artifact_id,
+                    outcome="found",
+                )
+                return body
             except (OSError, json.JSONDecodeError):
+                self._record_access(
+                    operation="load",
+                    artifact_id=artifact_id,
+                    outcome="read_error",
+                )
                 return None
+        self._record_access(
+            operation="load",
+            artifact_id=artifact_id,
+            outcome="not_found",
+        )
         return None
 
     def recover(
@@ -125,6 +179,11 @@ class ContextArtifactStore:
         """Recover a bounded payload, optionally narrowed by question or source page."""
         body = self.load(artifact_id)
         if body is None:
+            self._record_access(
+                operation="recover",
+                artifact_id=artifact_id,
+                outcome="not_found",
+            )
             return None
         payload = body.get("payload")
         selected = payload
@@ -150,7 +209,7 @@ class ContextArtifactStore:
         text = _coerce_text(selected)
         truncated = len(text) > max_chars
         content = text[:max_chars].rstrip() + ("…" if truncated else "")
-        return {
+        result = {
             "artifact_id": artifact_id,
             "kind": body.get("kind", "unknown"),
             "selector": selector,
@@ -159,6 +218,13 @@ class ContextArtifactStore:
             "truncated": truncated,
             "full_chars": len(text),
         }
+        self._record_access(
+            operation="recover",
+            artifact_id=artifact_id,
+            outcome="found",
+            selector=selector,
+        )
+        return result
 
 
 def get_context_artifact_store() -> ContextArtifactStore:

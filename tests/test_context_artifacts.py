@@ -84,6 +84,28 @@ def test_context_artifact_store_rejects_unsafe_id_and_bounds_content(tmp_path):
     assert len(recovered["content"]) == 41
 
 
+def test_context_artifact_store_audits_metadata_without_payload(tmp_path):
+    store = ContextArtifactStore(tmp_path)
+    ref = store.put(
+        kind="document_parse",
+        payload={"questions": [{"number": "8", "stem": "私有原文"}]},
+    )
+
+    assert store.load(ref.artifact_id) is not None
+    assert store.recover(ref.artifact_id, question_number="8") is not None
+
+    entries = [
+        json.loads(line)
+        for line in store.audit_path.read_text(encoding="utf-8").splitlines()
+    ]
+    operations = [entry["operation"] for entry in entries]
+    assert "load" in operations
+    assert "recover" in operations
+    assert all(entry["artifact_id"] == ref.artifact_id for entry in entries)
+    assert all("私有原文" not in json.dumps(entry, ensure_ascii=False) for entry in entries)
+    assert entries[-1]["selector"] == {"question_number": "8"}
+
+
 def test_recover_context_artifact_tool_returns_selected_question(tmp_path):
     store = ContextArtifactStore(tmp_path)
     ref = store.put(

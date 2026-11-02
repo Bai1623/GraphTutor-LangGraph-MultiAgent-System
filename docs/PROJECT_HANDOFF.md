@@ -603,6 +603,7 @@ import "./.next/types/routes.d.ts";
 其他已知工程建议：
 
 - Artifact 按需恢复已完成：`recover_context_artifact` 支持按 `artifact_id`、题号、页码恢复，并限制单次返回长度；后续可扩展页级原文切片和访问审计。
+- Artifact 访问审计已完成：`ContextArtifactStore` 写入 metadata-only 的 `access_audit.jsonl`，记录 load/recover 操作、结果和筛选条件，不写入原文。
 - Agent 工具大结果已落盘：Academic Agent 的长搜索结果会保存为 `agent_tool_result` artifact，并在 ToolMessage 中只保留预览和引用；后续可增加 artifact 访问审计与自动清理策略。
 - Compression harness 已支持 `--use-llm --compare-answers`：对压缩前后真实回答执行零温度生成和结构化 Judge 评分，低于阈值或明确退化即失败；默认离线 CI 不产生模型费用。
 - `project_doctor` 的项目相对路径统一使用 POSIX 风格展示，Windows 与 Linux/macOS 的自检输出和断言保持一致。

@@ -179,6 +179,8 @@ Academic Agent 的 `search_knowledge_base` 和 `search_web` 工具结果超过 `
 
 短结果直接内联，避免无意义的磁盘写入；`recover_context_artifact` 的结果本身已经有最大恢复长度限制，因此不再次压缩，保证按需恢复真正能提供细节。
 
+`ContextArtifactStore` 同时写入 metadata-only 的 `access_audit.jsonl`，记录 load/recover 的时间、artifact ID、操作结果和题号/页码筛选条件，不记录 artifact 原文。审计写入失败不会阻断正常读取。
+
 ## 后续改造建议
 
 1. 已增加 artifact 恢复工具：`recover_context_artifact` 会校验 `artifact_id`，并可按题号或页码恢复有界内容；Academic Agent 可在预览不足时自主调用。
