@@ -181,9 +181,23 @@ Academic Agent 的 `search_knowledge_base` 和 `search_web` 工具结果超过 `
 
 `ContextArtifactStore` 同时写入 metadata-only 的 `access_audit.jsonl`，记录 load/recover 的时间、artifact ID、操作结果和题号/页码筛选条件，不记录 artifact 原文。审计写入失败不会阻断正常读取。
 
+### 10. Artifact 保留策略与清理
+
+`ContextArtifactStore.cleanup_expired()` 提供按 `created_at` 判断的保留策略。默认是 dry-run，只扫描日期目录下的 artifact JSON，输出扫描数量、过期数量、占用字节数和 kind 分布，不会删除文件。需要真正清理时必须显式传入 `apply=True`，并且只删除符合日期目录和 JSON 文件约束的过期产物，`access_audit.jsonl` 会保留。
+
+命令行入口同样默认只预览：
+
+```bash
+python -m uv run python scripts/cleanup_context_artifacts.py --max-age-days 30
+python -m uv run python scripts/cleanup_context_artifacts.py --max-age-days 30 --apply
+```
+
+生产环境建议先将 dry-run 结果接入定时任务和告警，再由单独的维护任务执行 `--apply`。清理策略不依赖文件修改时间，而是读取 artifact 内的 `created_at`，避免复制或恢复文件后改变 TTL 语义。
+
 ## 后续改造建议
 
 1. 已增加 artifact 恢复工具：`recover_context_artifact` 会校验 `artifact_id`，并可按题号或页码恢复有界内容；Academic Agent 可在预览不足时自主调用。
 2. 已增加按节点的读时投影：`build_node_context(state, node_name)`，四个提示词消费节点已使用字段白名单。
 3. 已对 Agent 工具循环的大结果接入 `ContextArtifactStore`，短结果内联，恢复结果保留既有边界。
+4. 已增加 Artifact 保留策略：默认 dry-run 统计过期产物，显式 `--apply` 才删除，并保留访问审计日志。
 4. 已扩展 compression harness 的 live LLM 模式：可生成压缩前后回答并由结构化 Judge 做质量退化评分。

@@ -11,7 +11,7 @@ import json
 import logging
 import re
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -225,6 +225,71 @@ class ContextArtifactStore:
             selector=selector,
         )
         return result
+
+    def cleanup_expired(
+        self,
+        *,
+        max_age_days: int,
+        now: datetime | None = None,
+        apply: bool = False,
+    ) -> dict[str, Any]:
+        """Report or remove artifacts older than the configured retention window."""
+        if max_age_days < 1:
+            raise ValueError("max_age_days must be at least 1")
+        current = now or datetime.now(UTC)
+        cutoff = current - timedelta(days=max_age_days)
+        scanned = expired = deleted = bytes_expired = bytes_deleted = 0
+        by_kind: dict[str, int] = {}
+        errors: list[str] = []
+        if not self.root.exists():
+            return {
+                "dry_run": not apply, "max_age_days": max_age_days,
+                "cutoff": cutoff.isoformat(), "scanned": 0, "expired": 0,
+                "deleted": 0, "bytes_expired": 0, "bytes_deleted": 0,
+                "by_kind": {}, "errors": [],
+            }
+
+        for day_dir in self.root.iterdir():
+            if not day_dir.is_dir() or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day_dir.name):
+                continue
+            for path in day_dir.glob("*.json"):
+                scanned += 1
+                try:
+                    body = json.loads(path.read_text(encoding="utf-8"))
+                    created_at = datetime.fromisoformat(str(body["created_at"]))
+                    if created_at.tzinfo is None:
+                        created_at = created_at.replace(tzinfo=UTC)
+                    if created_at >= cutoff:
+                        continue
+                    size = path.stat().st_size
+                    kind = str(body.get("kind", "unknown"))
+                except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                    errors.append(f"{path.name}: {type(exc).__name__}")
+                    continue
+
+                expired += 1
+                bytes_expired += size
+                by_kind[kind] = by_kind.get(kind, 0) + 1
+                if apply:
+                    try:
+                        path.unlink()
+                        deleted += 1
+                        bytes_deleted += size
+                        self._record_access(
+                            operation="cleanup",
+                            artifact_id=str(body.get("artifact_id", path.stem)),
+                            outcome="deleted",
+                        )
+                    except OSError as exc:
+                        errors.append(f"{path.name}: {type(exc).__name__}")
+
+        return {
+            "dry_run": not apply, "max_age_days": max_age_days,
+            "cutoff": cutoff.isoformat(), "scanned": scanned,
+            "expired": expired, "deleted": deleted,
+            "bytes_expired": bytes_expired, "bytes_deleted": bytes_deleted,
+            "by_kind": by_kind, "errors": errors,
+        }
 
 
 def get_context_artifact_store() -> ContextArtifactStore:

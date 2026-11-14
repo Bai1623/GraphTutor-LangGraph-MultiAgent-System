@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -104,6 +105,48 @@ def test_context_artifact_store_audits_metadata_without_payload(tmp_path):
     assert all(entry["artifact_id"] == ref.artifact_id for entry in entries)
     assert all("私有原文" not in json.dumps(entry, ensure_ascii=False) for entry in entries)
     assert entries[-1]["selector"] == {"question_number": "8"}
+
+
+def test_cleanup_expired_defaults_to_dry_run_and_preserves_audit(tmp_path):
+    store = ContextArtifactStore(tmp_path)
+    old = store.put(kind="old", payload={"content": "old"})
+    new = store.put(kind="new", payload={"content": "new"})
+    old_path = next(tmp_path.glob(f"**/{old.artifact_id}.json"))
+    body = json.loads(old_path.read_text(encoding="utf-8"))
+    body["created_at"] = (datetime.now(UTC) - timedelta(days=31)).isoformat()
+    old_path.write_text(json.dumps(body), encoding="utf-8")
+    store.audit_path.write_text("keep this audit\n", encoding="utf-8")
+
+    preview = store.cleanup_expired(max_age_days=30)
+
+    assert preview["dry_run"] is True
+    assert preview["expired"] == 1
+    assert preview["deleted"] == 0
+    assert old_path.exists()
+    assert next(tmp_path.glob(f"**/{new.artifact_id}.json")).exists()
+    assert store.audit_path.exists()
+
+
+def test_cleanup_apply_removes_only_expired_artifact(tmp_path):
+    store = ContextArtifactStore(tmp_path)
+    old = store.put(kind="old", payload={"content": "old"})
+    new = store.put(kind="new", payload={"content": "new"})
+    old_path = next(tmp_path.glob(f"**/{old.artifact_id}.json"))
+    body = json.loads(old_path.read_text(encoding="utf-8"))
+    body["created_at"] = (datetime.now(UTC) - timedelta(days=31)).isoformat()
+    old_path.write_text(json.dumps(body), encoding="utf-8")
+
+    result = store.cleanup_expired(max_age_days=30, apply=True)
+
+    assert result["deleted"] == 1
+    assert not old_path.exists()
+    assert next(tmp_path.glob(f"**/{new.artifact_id}.json")).exists()
+    entries = [
+        json.loads(line)
+        for line in store.audit_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert entries[-1]["operation"] == "cleanup"
+    assert entries[-1]["outcome"] == "deleted"
 
 
 def test_recover_context_artifact_tool_returns_selected_question(tmp_path):
