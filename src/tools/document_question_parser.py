@@ -113,6 +113,10 @@ async def parse_exam_uploads_prepared(
         "parser": parser,
         "segmenter_used": segmenter_used,
     }
+    if isinstance(payload, dict):
+        page_texts = payload.get("page_texts") or payload.get("pages")
+        if page_texts:
+            artifact_payload["page_texts"] = page_texts
     preview = _document_preview(questions, recognized_text)
     artifact_ref = get_context_artifact_store().put(
         kind="document_parse",
@@ -266,7 +270,13 @@ def _fallback_document_parse(kind: str, files: list[dict[str, Any]]) -> tuple[di
     item = files[0]
     try:
         if kind == "pdf":
-            text = _extract_pdf_text(item["data"])
+            extracted = _extract_pdf_text(item["data"])
+            if isinstance(extracted, tuple):
+                text, page_texts = extracted
+            else:
+                # Keep compatibility with integrations that patch the legacy
+                # text-only helper in tests or custom adapters.
+                text, page_texts = extracted, {}
             parser = "local:pymupdf"
         elif kind == "docx":
             text = _extract_docx_text(item["data"])
@@ -290,19 +300,24 @@ def _fallback_document_parse(kind: str, files: list[dict[str, Any]]) -> tuple[di
                 "DOCUMENT_MCP_COMMAND with OCR-capable tools."
             ),
         )
-    return {"recognized_text": text}, parser
+    result: dict[str, Any] = {"recognized_text": text}
+    if kind == "pdf":
+        result["page_texts"] = page_texts
+    return result, parser
 
 
-def _extract_pdf_text(data: bytes) -> str:
+def _extract_pdf_text(data: bytes) -> tuple[str, dict[str, str]]:
     import fitz
 
     pages = []
+    page_texts: dict[str, str] = {}
     with fitz.open(stream=data, filetype="pdf") as document:
         for page_number, page in enumerate(document, 1):
             text = page.get_text("text").strip()
             if text:
+                page_texts[str(page_number)] = text
                 pages.append(f"--- Page {page_number} ---\n{text}")
-    return "\n\n".join(pages)
+    return "\n\n".join(pages), page_texts
 
 
 def _extract_docx_text(data: bytes) -> str:

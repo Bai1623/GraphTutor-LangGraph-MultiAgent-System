@@ -73,6 +73,24 @@ def test_context_artifact_store_recovers_question_and_page(tmp_path):
     assert "第一题" in by_page["content"]
 
 
+def test_context_artifact_store_recovers_page_text_when_questions_have_no_page(tmp_path):
+    store = ContextArtifactStore(tmp_path)
+    ref = store.put(
+        kind="document_parse",
+        payload={
+            "questions": [],
+            "recognized_text": "第一页\n第二页",
+            "page_texts": {"1": "第一页原文", "2": "第二页原文"},
+        },
+    )
+
+    recovered = store.recover(ref.artifact_id, page=2)
+
+    assert recovered is not None
+    assert recovered["matched_items"] is None
+    assert "第二页原文" in recovered["content"]
+
+
 def test_context_artifact_store_rejects_unsafe_id_and_bounds_content(tmp_path):
     store = ContextArtifactStore(tmp_path)
     ref = store.put(kind="tool_output", payload={"content": "长内容" * 100})

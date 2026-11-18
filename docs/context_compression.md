@@ -181,6 +181,8 @@ Academic Agent 的 `search_knowledge_base` 和 `search_web` 工具结果超过 `
 
 `ContextArtifactStore` 同时写入 metadata-only 的 `access_audit.jsonl`，记录 load/recover 的时间、artifact ID、操作结果和题号/页码筛选条件，不记录 artifact 原文。审计写入失败不会阻断正常读取。
 
+文档解析 artifact 如果包含 `page_texts`，恢复工具会优先按页返回原文；如果指定页没有独立原文，再回退到题目的 `source_pages` 匹配。这让“只解释第 3 页”不会把整份上传材料重新放入上下文。PDF 本地 fallback 会保留页号到文本的映射，MCP 解析结果的 `page_texts` 也会随 artifact 一起保存。
+
 ### 10. Artifact 保留策略与清理
 
 `ContextArtifactStore.cleanup_expired()` 提供按 `created_at` 判断的保留策略。默认是 dry-run，只扫描日期目录下的 artifact JSON，输出扫描数量、过期数量、占用字节数和 kind 分布，不会删除文件。需要真正清理时必须显式传入 `apply=True`，并且只删除符合日期目录和 JSON 文件约束的过期产物，`access_audit.jsonl` 会保留。
@@ -196,7 +198,7 @@ python -m uv run python scripts/cleanup_context_artifacts.py --max-age-days 30 -
 
 ## 后续改造建议
 
-1. 已增加 artifact 恢复工具：`recover_context_artifact` 会校验 `artifact_id`，并可按题号或页码恢复有界内容；Academic Agent 可在预览不足时自主调用。
+1. 已增加 artifact 恢复工具：`recover_context_artifact` 会校验 `artifact_id`，并可按题号或页码恢复有界内容；文档解析结果支持页级原文切片，Academic Agent 可在预览不足时自主调用。
 2. 已增加按节点的读时投影：`build_node_context(state, node_name)`，四个提示词消费节点已使用字段白名单。
 3. 已对 Agent 工具循环的大结果接入 `ContextArtifactStore`，短结果内联，恢复结果保留既有边界。
 4. 已增加 Artifact 保留策略：默认 dry-run 统计过期产物，显式 `--apply` 才删除，并保留访问审计日志。

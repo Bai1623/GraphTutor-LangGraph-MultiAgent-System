@@ -200,11 +200,22 @@ class ContextArtifactStore:
             ]
         elif page is not None:
             selector["page"] = page
-            selected = [
+            question_matches = [
                 item
                 for item in questions
                 if page in (item.get("source_pages") or [])
             ]
+            page_texts = payload.get("page_texts") if isinstance(payload, dict) else None
+            if question_matches:
+                selected = question_matches
+            elif isinstance(page_texts, dict):
+                selected = page_texts.get(str(page), page_texts.get(page, ""))
+            elif isinstance(page_texts, list):
+                selected = [
+                    item.get("text", "")
+                    for item in page_texts
+                    if isinstance(item, dict) and item.get("page") == page
+                ]
 
         text = _coerce_text(selected)
         truncated = len(text) > max_chars
