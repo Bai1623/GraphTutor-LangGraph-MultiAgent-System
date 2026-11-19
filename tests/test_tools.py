@@ -14,7 +14,7 @@ class TestSearchFunction:
     @patch("src.tools.search_tool.get_search_tool")
     def test_returns_normalized_results(self, mock_get_tool):
         mock_tool = MagicMock()
-        mock_tool.invoke.return_value = [
+        mock_tool.text.return_value = [
             {"snippet": "content1", "title": "title1", "link": "url1"},
             {"snippet": "content2", "title": "title2", "link": "url2"},
         ]
@@ -30,7 +30,7 @@ class TestSearchFunction:
     @patch("src.tools.search_tool.get_search_tool")
     def test_handles_string_response(self, mock_get_tool):
         mock_tool = MagicMock()
-        mock_tool.invoke.return_value = "plain text result"
+        mock_tool.text.return_value = "plain text result"
         mock_get_tool.return_value = mock_tool
 
         results = search("test query")
@@ -41,7 +41,7 @@ class TestSearchFunction:
     @patch("src.tools.search_tool.get_search_tool")
     def test_returns_empty_on_exception(self, mock_get_tool):
         mock_tool = MagicMock()
-        mock_tool.invoke.side_effect = Exception("API error")
+        mock_tool.text.side_effect = Exception("API error")
         mock_get_tool.return_value = mock_tool
 
         results = search("test query")
@@ -51,7 +51,7 @@ class TestSearchFunction:
     @patch("src.tools.search_tool.get_search_tool")
     def test_handles_alternate_key_names(self, mock_get_tool):
         mock_tool = MagicMock()
-        mock_tool.invoke.return_value = [
+        mock_tool.text.return_value = [
             {"content": "c1", "title": "t1", "url": "u1"},
         ]
         mock_get_tool.return_value = mock_tool
@@ -66,7 +66,7 @@ class TestGetSearchTool:
 
     def test_creates_singleton(self):
         try:
-            import ddgs  # noqa: F401
+            from duckduckgo_search import DDGS  # noqa: F401
         except ImportError:
             pytest.skip("ddgs package not installed")
 

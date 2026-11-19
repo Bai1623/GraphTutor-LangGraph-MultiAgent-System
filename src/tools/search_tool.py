@@ -21,23 +21,20 @@
 
 from __future__ import annotations
 
-from langchain_community.tools import DuckDuckGoSearchResults
+from duckduckgo_search import DDGS
 
-_search_tool: DuckDuckGoSearchResults | None = None
+_search_tool: DDGS | None = None
 
 
-def get_search_tool() -> DuckDuckGoSearchResults:
+def get_search_tool() -> DDGS:
     """懒加载单例——避免因多次实例化导致的 API 限流。
 
-    DuckDuckGoSearchResults 实例在进程生命周期内复用，
+    DDGS 实例在进程生命周期内复用，
     避免了每次搜索都重新建立 HTTP 连接的开销。
     """
     global _search_tool
     if _search_tool is None:
-        _search_tool = DuckDuckGoSearchResults(
-            num_results=3,           # 只取前 3 条，避免信息过载
-            output_format="list",    # 返回列表格式，方便处理
-        )
+        _search_tool = DDGS()
     return _search_tool
 
 
@@ -59,7 +56,7 @@ def search(query: str) -> list[dict]:
     """
     tool = get_search_tool()
     try:
-        results = tool.invoke(query)
+        results = tool.text(query, max_results=3)
     except Exception:
         # —— 容错：搜索失败时返回空结果 ——
         return []
