@@ -39,14 +39,16 @@ class TestSearchFunction:
         assert results[0]["content"] == "plain text result"
 
     @patch("src.tools.search_tool.get_search_tool")
-    def test_returns_empty_on_exception(self, mock_get_tool):
+    def test_returns_empty_on_exception_and_logs_reason(self, mock_get_tool, caplog):
         mock_tool = MagicMock()
         mock_tool.text.side_effect = Exception("API error")
         mock_get_tool.return_value = mock_tool
 
-        results = search("test query")
+        with caplog.at_level("WARNING"):
+            results = search("test query")
 
         assert results == []
+        assert "DuckDuckGo search failed: Exception" in caplog.text
 
     @patch("src.tools.search_tool.get_search_tool")
     def test_handles_alternate_key_names(self, mock_get_tool):

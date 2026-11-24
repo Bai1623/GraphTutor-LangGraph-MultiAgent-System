@@ -21,8 +21,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from duckduckgo_search import DDGS
 
+logger = logging.getLogger(__name__)
 _search_tool: DDGS | None = None
 
 
@@ -57,8 +60,9 @@ def search(query: str) -> list[dict]:
     tool = get_search_tool()
     try:
         results = tool.text(query, max_results=3)
-    except Exception:
-        # —— 容错：搜索失败时返回空结果 ——
+    except Exception as exc:
+        # —— 容错：搜索失败时返回空结果，同时保留可观测原因 ——
+        logger.warning("DuckDuckGo search failed: %s", type(exc).__name__)
         return []
 
     # DuckDuckGo 有时返回字符串（较少见），兜底处理
