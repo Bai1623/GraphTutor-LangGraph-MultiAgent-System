@@ -25,6 +25,8 @@ import logging
 
 from duckduckgo_search import DDGS
 
+from src.tracing.metrics import record_search
+
 logger = logging.getLogger(__name__)
 _search_tool: DDGS | None = None
 
@@ -63,13 +65,16 @@ def search(query: str) -> list[dict]:
     except Exception as exc:
         # —— 容错：搜索失败时返回空结果，同时保留可观测原因 ——
         logger.warning("DuckDuckGo search failed: %s", type(exc).__name__)
+        record_search(error_type=type(exc).__name__)
         return []
 
     # DuckDuckGo 有时返回字符串（较少见），兜底处理
     if isinstance(results, str):
+        record_search(result_count=1)
         return [{"content": results, "title": "", "url": ""}]
 
     # 字段映射：DuckDuckGo → 统一格式
+    record_search(result_count=len(results))
     return [
         {
             "content": r.get("snippet", r.get("content", "")),

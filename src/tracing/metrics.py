@@ -48,6 +48,14 @@ _cache: dict[str, Any] = {
     "stores_total": 0,
 }
 
+_search: dict[str, Any] = {
+    "requests_total": 0,
+    "results_total": 0,
+    "empty_total": 0,
+    "errors_total": 0,
+    "by_error": {},
+}
+
 
 def _rate(numerator: int | float, denominator: int | float) -> float:
     if denominator <= 0:
@@ -162,12 +170,27 @@ def record_cache_store() -> None:
         _cache["stores_total"] += 1
 
 
+def record_search(*, result_count: int = 0, error_type: str | None = None) -> None:
+    """Record one web-search attempt without storing query text."""
+    with _lock:
+        _search["requests_total"] += 1
+        if error_type:
+            _search["errors_total"] += 1
+            by_error = _search["by_error"]
+            by_error[error_type] = by_error.get(error_type, 0) + 1
+        else:
+            _search["results_total"] += result_count
+            if result_count == 0:
+                _search["empty_total"] += 1
+
+
 def snapshot() -> dict[str, Any]:
     with _lock:
         http = deepcopy(_http)
         llm = deepcopy(_llm)
         rag = deepcopy(_rag)
         cache = deepcopy(_cache)
+        search = deepcopy(_search)
 
     http["latency_ms_avg"] = _avg(http["latency_ms_sum"], http["requests_total"])
     http["latency_ms_max"] = round(http["latency_ms_max"], 2)
@@ -191,6 +214,8 @@ def snapshot() -> dict[str, Any]:
     rag.pop("top_score_sum", None)
 
     cache["hit_rate"] = _rate(cache["hits_total"], cache["lookups_total"])
+    search["empty_rate"] = _rate(search["empty_total"], search["requests_total"])
+    search["error_rate"] = _rate(search["errors_total"], search["requests_total"])
 
     return {
         "process": {
@@ -201,6 +226,7 @@ def snapshot() -> dict[str, Any]:
         "llm": llm,
         "rag": rag,
         "semantic_cache": cache,
+        "web_search": search,
     }
 
 
@@ -237,4 +263,11 @@ def reset_metrics() -> None:
             "lookups_total": 0,
             "hits_total": 0,
             "stores_total": 0,
+        })
+        _search.update({
+            "requests_total": 0,
+            "results_total": 0,
+            "empty_total": 0,
+            "errors_total": 0,
+            "by_error": {},
         })
